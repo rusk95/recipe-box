@@ -707,6 +707,13 @@
       return null;
     }
 
+    // Resolve relative photoUrl to absolute
+    if (recipeData.photoUrl) {
+      try {
+        recipeData.photoUrl = new URL(recipeData.photoUrl, url).href;
+      } catch {}
+    }
+
     // Auto-detect category
     recipeData.category = detectCategory(recipeData.name, recipeData.ingredientGroups);
     recipeData.url = url;
@@ -936,18 +943,33 @@
 
   async function fetchImageAsBase64(imageUrl) {
     try {
-      // Try via CORS proxy
+      // 1. Try fetching directly first (some CDNs allow CORS for images)
+      try {
+        const res = await fetch(imageUrl, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const blob = await res.blob();
+          if (blob.type.startsWith('image/')) {
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
+              reader.readAsDataURL(blob);
+            });
+          }
+        }
+      } catch (e) {
+        // Fallback to proxy
+      }
+
+      // 2. Try via CORS proxy
       for (const proxy of CORS_PROXIES) {
         try {
-          const res = await fetch(proxy(imageUrl), { signal: AbortSignal.timeout(10000) });
+          const res = await fetch(proxy(imageUrl), { signal: AbortSignal.timeout(8000) });
           if (res.ok) {
             const blob = await res.blob();
             if (!blob.type.startsWith('image/')) continue;
             return new Promise((resolve) => {
               const reader = new FileReader();
-              reader.onload = () => {
-                resizeImage(reader.result, 800, 600, resolve);
-              };
+              reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
               reader.readAsDataURL(blob);
             });
           }
