@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="RecipeBox — お気に入りの料理レシピを一元管理。カテゴリ分類・キーワード検索で素早くアクセス。">
+  <meta name="theme-color" content="#e8750a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>RecipeBox — レシピ管理</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ===== HEADER ===== -->
+  <header class="header" id="header">
+    <div class="header__inner">
+      <div class="header__brand">
+        <span class="header__logo">🍳</span>
+        <h1 class="header__title">RecipeBox</h1>
+      </div>
+      <div class="header__actions">
+        <span class="header__count" id="recipeCount">0 レシピ</span>
+        <button class="btn-icon" id="btnToggleTheme" aria-label="テーマ切替">
+          <svg class="icon icon--sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="icon icon--moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        </button>
+        <button class="btn-icon" id="btnSettings" aria-label="設定">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+    <!-- Search Bar -->
+    <div class="search-bar" id="searchBar">
+      <div class="search-bar__inner">
+        <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" class="search-bar__input" id="searchInput" placeholder="レシピ名や食材で検索..." autocomplete="off">
+        <button class="search-bar__clear" id="searchClear" aria-label="検索をクリア" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Category Tabs -->
+    <div class="category-tabs" id="categoryTabs">
+      <div class="category-tabs__inner">
+        <button class="category-tab active" data-category="all">
+          <span class="category-tab__icon">📋</span>
+          <span class="category-tab__label">すべて</span>
+        </button>
+        <button class="category-tab" data-category="favorite">
+          <span class="category-tab__icon">⭐</span>
+          <span class="category-tab__label">お気に入り</span>
+        </button>
+        <button class="category-tab" data-category="main">
+          <span class="category-tab__icon">🥩</span>
+          <span class="category-tab__label">主菜</span>
+        </button>
+        <button class="category-tab" data-category="side">
+          <span class="category-tab__icon">🥗</span>
+          <span class="category-tab__label">副菜</span>
+        </button>
+        <button class="category-tab" data-category="salad">
+          <span class="category-tab__icon">🥬</span>
+          <span class="category-tab__label">サラダ</span>
+        </button>
+        <button class="category-tab" data-category="soup">
+          <span class="category-tab__icon">🍲</span>
+          <span class="category-tab__label">汁物</span>
+        </button>
+        <button class="category-tab" data-category="rice">
+          <span class="category-tab__icon">🍚</span>
+          <span class="category-tab__label">ご飯もの</span>
+        </button>
+        <button class="category-tab" data-category="noodle">
+          <span class="category-tab__icon">🍜</span>
+          <span class="category-tab__label">麺類</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Recipe Grid -->
+    <div class="recipe-grid" id="recipeGrid">
+      <!-- Cards rendered by JS -->
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="emptyState" style="display:none;">
+      <div class="empty-state__icon">📖</div>
+      <h2 class="empty-state__title">レシピがまだありません</h2>
+      <p class="empty-state__text">右下の「＋」ボタンからレシピを追加してみましょう！</p>
+    </div>
+
+    <!-- No Results State -->
+    <div class="empty-state" id="noResults" style="display:none;">
+      <div class="empty-state__icon">🔍</div>
+      <h2 class="empty-state__title">見つかりませんでした</h2>
+      <p class="empty-state__text">検索条件を変えてお試しください</p>
+    </div>
+  </main>
+
+  <!-- ===== FAB (Add Button) ===== -->
+  <button class="fab" id="btnAddRecipe" aria-label="レシピを追加">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <!-- ===== RECIPE FORM MODAL ===== -->
+  <div class="modal-overlay" id="formModal">
+    <div class="modal" role="dialog" aria-labelledby="formModalTitle">
+      <div class="modal__header">
+        <h2 class="modal__title" id="formModalTitle">レシピを追加</h2>
+        <button class="btn-icon modal__close" id="formModalClose" aria-label="閉じる">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <form id="recipeForm" novalidate>
+          <input type="hidden" id="recipeId">
+
+          <!-- URL Auto-Import -->
+          <div class="form-group" id="urlImportSection">
+            <label class="form-label">🔗 URLから自動取得</label>
+            <div class="url-import">
+              <div class="url-import__input-wrap">
+                <input type="url" class="form-input url-import__input" id="importUrlInput" placeholder="レシピページのURLを貼り付け...">
+                <button type="button" class="btn btn--primary url-import__btn" id="btnFetchUrl">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9"/></svg>
+                  取得
+                </button>
+              </div>
+              <div class="url-import__status" id="importStatus" style="display:none;">
+                <div class="url-import__spinner"></div>
+                <span class="url-import__status-text" id="importStatusText">レシピを取得中...</span>
+              </div>
+              <p class="url-import__hint">クックパッド、クラシル、Delish Kitchen等のレシピURLを貼り付けると、料理名・食材・手順を自動で取得します</p>
+            </div>
+          </div>
+
+          <hr class="form-divider">
+
+          <!-- Photo Upload -->
+          <div class="form-group">
+            <label class="form-label">写真</label>
+            <div class="photo-upload" id="photoUpload">
+              <img class="photo-upload__preview" id="photoPreview" alt="" style="display:none;">
+              <div class="photo-upload__placeholder" id="photoPlaceholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                <span>クリックして写真を追加</span>
+              </div>
+              <input type="file" id="photoInput" accept="image/*" style="display:none;">
+              <button type="button" class="photo-upload__remove" id="photoRemove" style="display:none;" aria-label="写真を削除">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Recipe Name -->
+          <div class="form-group">
+            <label class="form-label" for="recipeName">レシピ名 <span class="required">*</span></label>
+            <input type="text" class="form-input" id="recipeName" placeholder="例: 鶏の唐揚げ" required>
+          </div>
+
+          <!-- Category, Servings, Cook Time -->
+          <div class="form-row">
+            <div class="form-group form-group--third">
+              <label class="form-label" for="recipeCategory">カテゴリ <span class="required">*</span></label>
+              <select class="form-select" id="recipeCategory" required>
+                <option value="">選択</option>
+                <option value="main">🥩 主菜</option>
+                <option value="side">🥗 副菜</option>
+                <option value="salad">🥬 サラダ</option>
+                <option value="soup">🍲 汁物</option>
+                <option value="rice">🍚 ご飯もの</option>
+                <option value="noodle">🍜 麺類</option>
+              </select>
+            </div>
+            <div class="form-group form-group--third">
+              <label class="form-label" for="recipeServings">何人分</label>
+              <div class="form-input-with-suffix">
+                <input type="number" class="form-input" id="recipeServings" placeholder="2" min="1" max="99">
+                <span class="form-suffix">人分</span>
+              </div>
+            </div>
+            <div class="form-group form-group--third">
+              <label class="form-label" for="recipeCookTime">調理時間</label>
+              <div class="form-input-with-suffix">
+                <input type="number" class="form-input" id="recipeCookTime" placeholder="30" min="1" max="999">
+                <span class="form-suffix">分</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ingredients -->
+          <div class="form-group">
+            <label class="form-label">材料</label>
+            <div class="ingredient-groups-container" id="ingredientGroupsContainer">
+              <!-- Dynamic groups added by JS -->
+            </div>
+            <div class="ingredient-group-actions">
+              <button type="button" class="btn-text" id="btnAddIngredient">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
+                材料を追加
+              </button>
+              <button type="button" class="btn-text" id="btnAddIngredientGroup">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+                見出しを追加
+              </button>
+            </div>
+          </div>
+
+          <!-- Steps -->
+          <div class="form-group">
+            <label class="form-label">作り方</label>
+            <div class="steps-list" id="stepsList">
+              <!-- Dynamic rows added by JS -->
+            </div>
+            <button type="button" class="btn-text" id="btnAddStep">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
+              手順を追加
+            </button>
+          </div>
+
+          <!-- Source URL -->
+          <div class="form-group">
+            <label class="form-label" for="recipeUrl">元レシピURL</label>
+            <input type="url" class="form-input" id="recipeUrl" placeholder="https://example.com/recipe/...">
+          </div>
+
+          <!-- Memo -->
+          <div class="form-group">
+            <label class="form-label" for="recipeMemo">メモ・アレンジ</label>
+            <textarea class="form-textarea" id="recipeMemo" rows="3" placeholder="実際に作った時の気づきやアレンジを記録..."></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn--secondary" id="btnCancelForm">キャンセル</button>
+            <button type="submit" class="btn btn--primary" id="btnSaveRecipe">保存する</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RECIPE DETAIL MODAL ===== -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal modal--detail" role="dialog" aria-labelledby="detailModalTitle">
+      <div class="modal__header">
+        <h2 class="modal__title" id="detailModalTitle">レシピ詳細</h2>
+        <button class="btn-icon modal__close" id="detailModalClose" aria-label="閉じる">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal__body" id="detailContent">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SETTINGS DRAWER ===== -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal modal--settings" role="dialog" aria-labelledby="settingsTitle">
+      <div class="modal__header">
+        <h2 class="modal__title" id="settingsTitle">設定</h2>
+        <button class="btn-icon modal__close" id="settingsClose" aria-label="閉じる">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="settings-section">
+          <h3 class="settings-section__title">データ管理</h3>
+          <div class="settings-actions">
+            <button class="btn btn--outline" id="btnExport">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              JSONエクスポート
+            </button>
+            <p class="settings-hint">レシピデータをJSONファイルとしてダウンロードします。バックアップや他のデバイスへの移行に使えます。</p>
+
+            <button class="btn btn--outline" id="btnImport">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              JSONインポート
+            </button>
+            <input type="file" id="importInput" accept=".json" style="display:none;">
+            <p class="settings-hint">エクスポートしたJSONファイルを読み込みます。既存データにマージされます。</p>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-section__title">☁️ Google ドライブ自動同期</h3>
+          <div class="settings-actions">
+            <div class="form-group" style="margin-bottom: var(--space-sm);">
+              <label class="form-label" for="googleClientId">OAuth クライアントID</label>
+              <input type="text" class="form-input" id="googleClientId" placeholder="GCPで作成したClient IDを入力">
+              <p class="settings-hint">
+                Google Cloud Console で作成した「ウェブアプリケーション」のクライアントIDです。
+              </p>
+            </div>
+            
+            <div class="gdrive-status" id="gdriveStatus" style="display: none; margin-bottom: var(--space-md);">
+              <span class="gdrive-status__icon">🔄</span>
+              <span class="gdrive-status__text" id="gdriveStatusText">未接続</span>
+            </div>
+
+            <div class="settings-buttons-row" style="display: flex; flex-wrap: wrap; gap: var(--space-sm);">
+              <button class="btn btn--outline" id="btnConnectGDrive" style="flex: 1; min-width: 140px;">
+                Googleアカウントと接続
+              </button>
+              <button class="btn btn--outline" id="btnSyncNow" style="display: none; flex: 1; min-width: 120px;">
+                今すぐ同期
+              </button>
+              <button class="btn btn--danger-outline" id="btnDisconnectGDrive" style="display: none; flex: 1; min-width: 120px;">
+                接続解除
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3 class="settings-section__title">注意</h3>
+          <div class="settings-actions">
+            <button class="btn btn--danger" id="btnDeleteAll">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+              すべてのレシピを削除
+            </button>
+            <p class="settings-hint">この操作は元に戻せません。事前にエクスポートすることをお勧めします。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST ===== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ===== DELETE CONFIRM ===== -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal modal--confirm" role="alertdialog" aria-labelledby="confirmTitle">
+      <div class="modal__body">
+        <div class="confirm__icon">⚠️</div>
+        <h3 class="confirm__title" id="confirmTitle">本当に削除しますか？</h3>
+        <p class="confirm__text" id="confirmText">この操作は元に戻せません。</p>
+        <div class="confirm__actions">
+          <button class="btn btn--secondary" id="confirmCancel">キャンセル</button>
+          <button class="btn btn--danger" id="confirmOk">削除する</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

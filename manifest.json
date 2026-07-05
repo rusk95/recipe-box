@@ -1,0 +1,17 @@
+{
+  "name": "RecipeBox — レシピ管理",
+  "short_name": "RecipeBox",
+  "description": "お気に入りの料理レシピを一元管理。カテゴリ分類・キーワード検索で素早くアクセス。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#e8750a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍳</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
