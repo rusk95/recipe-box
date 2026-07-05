@@ -652,8 +652,8 @@ body::before {
   border-radius: var(--radius-xl);
   width: 100%;
   max-width: 580px;
-  max-height: 90vh;
-  max-height: 90dvh;
+  max-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px);
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px);
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-xl);
@@ -1821,7 +1821,8 @@ body::before {
   }
 
   .modal {
-    max-height: 95vh;
+    max-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px);
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px);
     margin: var(--space-sm);
     border-radius: var(--radius-lg);
   }
