@@ -24,6 +24,7 @@
   let searchQuery = '';
   let editingId = null;
   let confirmCallback = null;
+  let initialFormDataJson = '';
 
   // ---- DOM Refs ----
   const $ = (sel) => document.querySelector(sel);
@@ -380,11 +381,31 @@
 
     openModal(dom.formModal);
     
+    // Capture initial state for dirty check (must be done AFTER openModal/populateForm!)
+    initialFormDataJson = JSON.stringify(collectFormData());
+    
     // Focus first input depending on edit/add without scrolling!
     if (editingId) {
       dom.recipeName.focus({ preventScroll: true });
     } else {
       dom.importUrlInput.focus({ preventScroll: true });
+    }
+  }
+
+  function handleCancelForm() {
+    const currentData = collectFormData();
+    const isDirty = JSON.stringify(currentData) !== initialFormDataJson;
+
+    if (isDirty) {
+      showConfirm(
+        '編集を破棄しますか？',
+        '入力中の内容は保存されません。',
+        () => {
+          closeModal(dom.formModal);
+        }
+      );
+    } else {
+      closeModal(dom.formModal);
     }
   }
 
@@ -1812,8 +1833,8 @@
     });
 
     // Form modal
-    dom.formModalClose.addEventListener('click', () => closeModal(dom.formModal));
-    dom.btnCancelForm.addEventListener('click', () => closeModal(dom.formModal));
+    dom.formModalClose.addEventListener('click', handleCancelForm);
+    dom.btnCancelForm.addEventListener('click', handleCancelForm);
 
     dom.recipeForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1925,7 +1946,13 @@
     // Close modals on overlay click
     [dom.formModal, dom.detailModal, dom.settingsModal, dom.confirmModal].forEach(overlay => {
       overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeModal(overlay);
+        if (e.target === overlay) {
+          if (overlay === dom.formModal) {
+            handleCancelForm();
+          } else {
+            closeModal(overlay);
+          }
+        }
       });
     });
 
@@ -1935,7 +1962,11 @@
         const modals = [dom.confirmModal, dom.formModal, dom.detailModal, dom.settingsModal];
         for (const m of modals) {
           if (m.classList.contains('open')) {
-            closeModal(m);
+            if (m === dom.formModal) {
+              handleCancelForm();
+            } else {
+              closeModal(m);
+            }
             break;
           }
         }
