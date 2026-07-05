@@ -656,6 +656,12 @@
     (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
   ];
 
+  const IMAGE_PROXIES = [
+    (url) => `https://images.weserv.nl/?url=${encodeURIComponent(url)}`,
+    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+  ];
+
   // Category auto-detection keywords
   const CATEGORY_RULES = [
     { category: 'soup',   keywords: ['味噌汁','みそ汁','スープ','汁','ポタージュ','シチュー','豚汁','けんちん','お吸い物','ミネストローネ','チャウダー','コンソメ'] },
@@ -983,8 +989,8 @@
       // Fallback to proxies
     }
 
-    // 2. Try via CORS proxy
-    for (const proxy of CORS_PROXIES) {
+    // 2. Try via Image/CORS proxies
+    for (const proxy of IMAGE_PROXIES) {
       try {
         const res = await fetch(proxy(imageUrl), { signal: AbortSignal.timeout(8000) });
         if (res.ok) {
