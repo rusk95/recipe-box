@@ -627,6 +627,8 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
+  height: 100vh;
+  height: 100dvh;
   background: var(--clr-overlay);
   z-index: 200;
   display: flex;
@@ -651,6 +653,7 @@ body::before {
   width: 100%;
   max-width: 580px;
   max-height: 90vh;
+  max-height: 90dvh;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-xl);
@@ -1849,10 +1852,13 @@ body::before {
   .modal-overlay {
     padding: 0;
     align-items: flex-end;
+    height: 100vh;
+    height: 100dvh;
   }
 
   .modal {
-    max-height: 92vh;
+    max-height: calc(100vh - env(safe-area-inset-top) - 16px);
+    max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
     margin: 0;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   }
