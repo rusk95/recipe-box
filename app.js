@@ -1634,7 +1634,7 @@
       const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
       const now = Date.now();
       const localTombstones = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
-      const driveTombstones = cloudData ? (cloudData.deletedIds || []) : [];
+      const driveTombstones = driveDeletedIds;
 
       // Normalize all entries to { id, deletedAt } format (backwards compat with plain strings)
       const normalize = (arr) => arr.map(t => typeof t === 'object' ? t : { id: t, deletedAt: now });
