@@ -312,11 +312,12 @@
   function deleteRecipe(id) {
     recipes = recipes.filter(r => r.id !== id);
 
-    // Track deleted ID for Google Drive sync tombstone
-    const deletedIds = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
-    if (!deletedIds.includes(id)) {
-      deletedIds.push(id);
-      localStorage.setItem('recipebox_deleted_ids', JSON.stringify(deletedIds));
+    // Track deleted ID as tombstone with timestamp
+    const tombstones = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
+    const entry = tombstones.find(t => (typeof t === 'object' ? t.id : t) === id);
+    if (!entry) {
+      tombstones.push({ id, deletedAt: Date.now() });
+      localStorage.setItem('recipebox_deleted_ids', JSON.stringify(tombstones));
     }
 
     saveRecipes();
@@ -325,7 +326,15 @@
     if (gdriveAccessToken) syncWithGDrive(true);
   }
 
-  function saveRecipe(data) {
+  async function saveRecipe(data) {
+    // If photo is an external URL (not base64), try to convert it before saving
+    if (data.photo && data.photo.startsWith('http')) {
+      try {
+        const base64 = await fetchImageAsBase64(data.photo);
+        if (base64) data.photo = base64;
+      } catch {}
+    }
+
     if (editingId) {
       const idx = recipes.findIndex(r => r.id === editingId);
       if (idx !== -1) {
@@ -757,23 +766,31 @@
 
         // Handle @graph arrays
         if (data['@graph']) {
-          data = data['@graph'].find(item => item['@type'] === 'Recipe') || null;
+          data = data['@graph'].find(item => {
+            const t = item['@type'];
+            return t === 'Recipe' || (Array.isArray(t) && t.includes('Recipe'));
+          }) || null;
           if (!data) continue;
         }
 
-        // Handle arrays
+        // Handle arrays at top level
         if (Array.isArray(data)) {
-          data = data.find(item => item['@type'] === 'Recipe') || null;
+          data = data.find(item => {
+            const t = item['@type'];
+            return t === 'Recipe' || (Array.isArray(t) && t.includes('Recipe'));
+          }) || null;
           if (!data) continue;
         }
 
-        if (data['@type'] !== 'Recipe') continue;
+        // Check @type (may be string or array)
+        const typeVal = data['@type'];
+        if (typeVal !== 'Recipe' && !(Array.isArray(typeVal) && typeVal.includes('Recipe'))) continue;
 
         const result = { name: data.name || '' };
 
         // Cook time (parse ISO 8601 duration)
-        if (data.totalTime || data.cookTime) {
-          result.cookTime = parseIsoDuration(data.totalTime || data.cookTime);
+        if (data.totalTime || data.cookTime || data.prepTime) {
+          result.cookTime = parseIsoDuration(data.totalTime || data.cookTime || data.prepTime);
         }
 
         // Servings
@@ -796,14 +813,15 @@
           result.steps = parseInstructions(data.recipeInstructions);
         }
 
-        // Image
+        // Image — handle string, array of strings, array of objects, ImageObject
         if (data.image) {
           if (typeof data.image === 'string') {
             result.photoUrl = data.image;
           } else if (Array.isArray(data.image)) {
-            result.photoUrl = typeof data.image[0] === 'string' ? data.image[0] : data.image[0]?.url;
-          } else if (data.image.url) {
-            result.photoUrl = data.image.url;
+            const first = data.image[0];
+            result.photoUrl = typeof first === 'string' ? first : (first?.url || first?.contentUrl || null);
+          } else if (typeof data.image === 'object') {
+            result.photoUrl = data.image.url || data.image.contentUrl || null;
           }
         }
 
@@ -1379,12 +1397,13 @@
   }
 
   function deleteAllRecipes() {
-    const ids = recipes.map(r => r.id);
-    const deletedIds = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
-    ids.forEach(id => {
-      if (!deletedIds.includes(id)) deletedIds.push(id);
+    const now = Date.now();
+    const tombstones = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
+    recipes.forEach(r => {
+      const exists = tombstones.find(t => (typeof t === 'object' ? t.id : t) === r.id);
+      if (!exists) tombstones.push({ id: r.id, deletedAt: now });
     });
-    localStorage.setItem('recipebox_deleted_ids', JSON.stringify(deletedIds));
+    localStorage.setItem('recipebox_deleted_ids', JSON.stringify(tombstones));
 
     recipes = [];
     saveRecipes();
@@ -1454,6 +1473,14 @@
         showToast('☁️ Googleドライブと接続しました！');
 
         syncWithGDrive();
+
+        // Schedule silent auto-refresh 5 minutes before expiry
+        const refreshIn = Math.max((expiresSeconds - 300) * 1000, 60000);
+        setTimeout(() => {
+          if (gdriveAccessToken && tokenClient) {
+            tokenClient.requestAccessToken({ prompt: '' });
+          }
+        }, refreshIn);
       },
     });
   }
@@ -1582,10 +1609,28 @@
         }
       }
 
-      // Merge deleted IDs (Local + Cloud)
-      const localDeletedIds = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
-      const mergedDeletedIds = Array.from(new Set([...localDeletedIds, ...driveDeletedIds]));
-      localStorage.setItem('recipebox_deleted_ids', JSON.stringify(mergedDeletedIds));
+      // Merge deleted tombstones (Local + Cloud), and purge ones older than 30 days
+      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      const localTombstones = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
+      const driveTombstones = cloudData ? (cloudData.deletedIds || []) : [];
+
+      // Normalize all entries to { id, deletedAt } format (backwards compat with plain strings)
+      const normalize = (arr) => arr.map(t => typeof t === 'object' ? t : { id: t, deletedAt: now });
+      const allTombstones = [...normalize(localTombstones), ...normalize(driveTombstones)];
+
+      // Deduplicate by id (keep oldest deletedAt) and purge expired entries
+      const tombstoneMap = new Map();
+      allTombstones.forEach(t => {
+        if (now - t.deletedAt > THIRTY_DAYS) return; // purge
+        const existing = tombstoneMap.get(t.id);
+        if (!existing || t.deletedAt < existing.deletedAt) {
+          tombstoneMap.set(t.id, t);
+        }
+      });
+      const mergedTombstones = Array.from(tombstoneMap.values());
+      const mergedDeletedIds = mergedTombstones.map(t => t.id);
+      localStorage.setItem('recipebox_deleted_ids', JSON.stringify(mergedTombstones));
 
       // 3. Merge recipes (Local + Cloud) and filter out deleted ones
       const mergedRecipes = mergeRecipeLists(recipes, driveRecipes)
@@ -1602,7 +1647,7 @@
         version: '1.0',
         updatedAt: new Date().toISOString(),
         recipes: recipes,
-        deletedIds: mergedDeletedIds
+        deletedIds: mergedTombstones  // store full tombstone objects in cloud
       };
 
       let uploadRes;
