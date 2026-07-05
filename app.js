@@ -1229,6 +1229,12 @@
   function openModal(overlay) {
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
+
+    // Reset scroll position of the modal body to top
+    const modalBody = overlay.querySelector('.modal__body');
+    if (modalBody) {
+      modalBody.scrollTop = 0;
+    }
   }
 
   function closeModal(overlay) {
