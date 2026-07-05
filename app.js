@@ -942,40 +942,38 @@
   }
 
   async function fetchImageAsBase64(imageUrl) {
+    // 1. Try fetching directly first (some CDNs allow CORS for images)
     try {
-      // 1. Try fetching directly first (some CDNs allow CORS for images)
+      const res = await fetch(imageUrl, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob.type.startsWith('image/')) {
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (e) {
+      // Fallback to proxies
+    }
+
+    // 2. Try via CORS proxy
+    for (const proxy of CORS_PROXIES) {
       try {
-        const res = await fetch(imageUrl, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(proxy(imageUrl), { signal: AbortSignal.timeout(8000) });
         if (res.ok) {
           const blob = await res.blob();
-          if (blob.type.startsWith('image/')) {
-            return new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
-              reader.readAsDataURL(blob);
-            });
-          }
+          if (!blob.type.startsWith('image/')) continue;
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
+            reader.readAsDataURL(blob);
+          });
         }
-      } catch (e) {
-        // Fallback to proxy
-      }
-
-      // 2. Try via CORS proxy
-      for (const proxy of CORS_PROXIES) {
-        try {
-          const res = await fetch(proxy(imageUrl), { signal: AbortSignal.timeout(8000) });
-          if (res.ok) {
-            const blob = await res.blob();
-            if (!blob.type.startsWith('image/')) continue;
-            return new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
-              reader.readAsDataURL(blob);
-            });
-          }
-        } catch { continue; }
-      }
-    } catch {}
+      } catch { continue; }
+    }
     return null;
   }
 
@@ -1230,14 +1228,20 @@
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
 
-    // Reset scroll position of the modal body to top (both immediately and after layout/focus)
+    // Reset scroll positions of all potential scroll containers inside the modal overlay
+    resetModalScroll(overlay);
+    setTimeout(() => resetModalScroll(overlay), 50);
+    setTimeout(() => resetModalScroll(overlay), 150);
+  }
+
+  function resetModalScroll(overlay) {
+    overlay.scrollTop = 0;
+    const modal = overlay.querySelector('.modal');
+    if (modal) modal.scrollTop = 0;
     const modalBody = overlay.querySelector('.modal__body');
-    if (modalBody) {
-      modalBody.scrollTop = 0;
-      setTimeout(() => {
-        modalBody.scrollTop = 0;
-      }, 50);
-    }
+    if (modalBody) modalBody.scrollTop = 0;
+    const form = overlay.querySelector('form');
+    if (form) form.scrollTop = 0;
   }
 
   function closeModal(overlay) {
