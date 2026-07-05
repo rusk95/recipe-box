@@ -784,6 +784,7 @@
     for (const script of scripts) {
       try {
         let data = JSON.parse(script.textContent);
+        if (!data || typeof data !== 'object') continue;
 
         // Handle @graph arrays
         if (data['@graph']) {
@@ -1637,7 +1638,17 @@
       const driveTombstones = driveDeletedIds;
 
       // Normalize all entries to { id, deletedAt } format (backwards compat with plain strings)
-      const normalize = (arr) => arr.map(t => typeof t === 'object' ? t : { id: t, deletedAt: now });
+      const normalize = (arr) => {
+        if (!Array.isArray(arr)) return [];
+        return arr
+          .filter(t => t !== null && t !== undefined)
+          .map(t => {
+            if (typeof t === 'object' && t && t.id) {
+              return { id: String(t.id), deletedAt: typeof t.deletedAt === 'number' ? t.deletedAt : now };
+            }
+            return { id: String(t), deletedAt: now };
+          });
+      };
       const allTombstones = [...normalize(localTombstones), ...normalize(driveTombstones)];
 
       // Deduplicate by id (keep oldest deletedAt) and purge expired entries
