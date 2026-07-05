@@ -311,6 +311,14 @@
 
   function deleteRecipe(id) {
     recipes = recipes.filter(r => r.id !== id);
+
+    // Track deleted ID for Google Drive sync tombstone
+    const deletedIds = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
+    if (!deletedIds.includes(id)) {
+      deletedIds.push(id);
+      localStorage.setItem('recipebox_deleted_ids', JSON.stringify(deletedIds));
+    }
+
     saveRecipes();
     renderRecipes();
     showToast('🗑️ レシピを削除しました');
@@ -362,7 +370,13 @@
     }
 
     openModal(dom.formModal);
-    dom.recipeName.focus();
+    
+    // Focus first input depending on edit/add without scrolling!
+    if (editingId) {
+      dom.recipeName.focus({ preventScroll: true });
+    } else {
+      dom.importUrlInput.focus({ preventScroll: true });
+    }
   }
 
   function resetForm() {
@@ -700,6 +714,12 @@
     // Fallback: meta tags + page content heuristics
     if (!recipeData) {
       recipeData = extractFromMeta(doc, url);
+    } else if (!recipeData.photoUrl) {
+      // If JSON-LD successfully parsed but has no photo, attempt to extract og:image from meta
+      const metaData = extractFromMeta(doc, url);
+      if (metaData && metaData.photoUrl) {
+        recipeData.photoUrl = metaData.photoUrl;
+      }
     }
 
     if (!recipeData || !recipeData.name) {
@@ -1349,6 +1369,13 @@
   }
 
   function deleteAllRecipes() {
+    const ids = recipes.map(r => r.id);
+    const deletedIds = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
+    ids.forEach(id => {
+      if (!deletedIds.includes(id)) deletedIds.push(id);
+    });
+    localStorage.setItem('recipebox_deleted_ids', JSON.stringify(deletedIds));
+
     recipes = [];
     saveRecipes();
     renderRecipes();
@@ -1523,6 +1550,7 @@
       const file = searchData.files && searchData.files[0];
 
       let driveRecipes = [];
+      let driveDeletedIds = [];
       let fileId = null;
 
       if (file) {
@@ -1540,11 +1568,18 @@
         if (downloadRes.ok) {
           const cloudData = await downloadRes.json();
           driveRecipes = cloudData.recipes || [];
+          driveDeletedIds = cloudData.deletedIds || [];
         }
       }
 
-      // 3. Merge recipes (Local + Cloud)
-      const mergedRecipes = mergeRecipeLists(recipes, driveRecipes);
+      // Merge deleted IDs (Local + Cloud)
+      const localDeletedIds = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
+      const mergedDeletedIds = Array.from(new Set([...localDeletedIds, ...driveDeletedIds]));
+      localStorage.setItem('recipebox_deleted_ids', JSON.stringify(mergedDeletedIds));
+
+      // 3. Merge recipes (Local + Cloud) and filter out deleted ones
+      const mergedRecipes = mergeRecipeLists(recipes, driveRecipes)
+        .filter(r => !mergedDeletedIds.includes(r.id));
 
       // 4. Update local state
       recipes = mergedRecipes;
@@ -1556,7 +1591,8 @@
         app: 'RecipeBox',
         version: '1.0',
         updatedAt: new Date().toISOString(),
-        recipes: recipes
+        recipes: recipes,
+        deletedIds: mergedDeletedIds
       };
 
       let uploadRes;
