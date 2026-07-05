@@ -1402,7 +1402,7 @@
     }
   }
 
-  function connectGDrive() {
+  async function connectGDrive() {
     const clientId = dom.googleClientId.value.trim();
     if (!clientId) {
       showToast('⚠️ OAuth クライアントIDを入力してください', 'error');
@@ -1411,8 +1411,13 @@
     }
     localStorage.setItem('recipebox_gdrive_client_id', clientId);
 
+    // PKCE generation
+    const verifier = generateCodeVerifier();
+    localStorage.setItem('recipebox_oauth_verifier', verifier);
+    const challenge = await generateCodeChallenge(verifier);
+
     const redirectUri = encodeURIComponent(location.origin + location.pathname);
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=token&scope=https://www.googleapis.com/auth/drive.file&prompt=consent`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=https://www.googleapis.com/auth/drive.file&code_challenge=${challenge}&code_challenge_method=S256&prompt=consent`;
     window.location.href = authUrl;
   }
 
@@ -1424,18 +1429,26 @@
     showToast('☁️ Googleドライブの接続を解除しました');
   }
 
-  function handleOAuthCallback() {
-    const hash = window.location.hash;
-    if (!hash) return;
+  async function handleOAuthCallback() {
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get('code');
+    if (code) {
+      // Clear query params in address bar
+      history.replaceState(null, document.title, window.location.pathname);
 
-    if (hash.includes('access_token=')) {
-      const params = new URLSearchParams(hash.substring(1));
-      const accessToken = params.get('access_token');
-      if (accessToken) {
-        // Clear hash in browser address bar without reload
-        history.replaceState(null, document.title, window.location.pathname + window.location.search);
+      const verifier = localStorage.getItem('recipebox_oauth_verifier');
+      if (!verifier) {
+        showToast('⚠️ 認証コード検証エラー（再試行してください）', 'error');
+        return;
+      }
+      localStorage.removeItem('recipebox_oauth_verifier');
 
-        const expiresSeconds = parseInt(params.get('expires_in'), 10) || 3600;
+      setGDriveStatus('syncing', '接続中...');
+
+      try {
+        const tokenData = await exchangeCodeForToken(code, verifier);
+        const accessToken = tokenData.access_token;
+        const expiresSeconds = tokenData.expires_in || 3600;
         const expiryTime = Date.now() + expiresSeconds * 1000;
 
         localStorage.setItem('recipebox_gdrive_token', accessToken);
@@ -1446,8 +1459,55 @@
         showToast('☁️ Googleドライブと接続しました！');
 
         syncWithGDrive();
+      } catch (err) {
+        console.error(err);
+        setGDriveStatus('error', '⚠️ ログイン認証に失敗しました');
+        showToast('⚠️ Google認証に失敗しました', 'error');
       }
     }
+  }
+
+  // --- PKCE Helpers ---
+  function generateCodeVerifier() {
+    const array = new Uint8Array(32);
+    window.crypto.getRandomValues(array);
+    return base64urlencode(array);
+  }
+
+  function base64urlencode(buffer) {
+    return btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  async function generateCodeChallenge(verifier) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(verifier);
+    const hashed = await window.crypto.subtle.digest('SHA-256', data);
+    return base64urlencode(hashed);
+  }
+
+  async function exchangeCodeForToken(code, verifier) {
+    const clientId = localStorage.getItem('recipebox_gdrive_client_id');
+    const redirectUri = location.origin + location.pathname;
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+        code: code,
+        code_verifier: verifier
+      })
+    });
+
+    if (res.ok) {
+      return await res.json();
+    }
+    throw new Error('Token exchange failed');
   }
 
   async function syncWithGDrive(silent = false) {
