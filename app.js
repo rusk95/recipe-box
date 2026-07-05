@@ -1230,10 +1230,13 @@
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
 
-    // Reset scroll position of the modal body to top
+    // Reset scroll position of the modal body to top (both immediately and after layout/focus)
     const modalBody = overlay.querySelector('.modal__body');
     if (modalBody) {
       modalBody.scrollTop = 0;
+      setTimeout(() => {
+        modalBody.scrollTop = 0;
+      }, 50);
     }
   }
 
