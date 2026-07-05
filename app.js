@@ -950,12 +950,16 @@
 
     // Try to fetch photo from URL (cross-origin images may fail)
     if (data.photoUrl) {
+      // Show external image URL immediately so it is visible
+      dom.photoPreview.src = data.photoUrl;
+      dom.photoPreview.style.display = 'block';
+      dom.photoPlaceholder.style.display = 'none';
+      dom.photoRemove.style.display = 'flex';
+
+      // Try to convert to Base64 in background for offline use
       fetchImageAsBase64(data.photoUrl).then(base64 => {
         if (base64) {
           dom.photoPreview.src = base64;
-          dom.photoPreview.style.display = 'block';
-          dom.photoPlaceholder.style.display = 'none';
-          dom.photoRemove.style.display = 'flex';
         }
       }).catch(() => {});
     }
