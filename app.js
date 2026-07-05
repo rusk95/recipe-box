@@ -239,7 +239,7 @@
 
     let imageHtml;
     if (recipe.photo) {
-      imageHtml = `<img class="recipe-card__image" src="${recipe.photo}" alt="${escapeHtml(recipe.name)}" loading="lazy">`;
+      imageHtml = `<img class="recipe-card__image" src="${recipe.photo}" alt="${escapeHtml(recipe.name)}" referrerpolicy="no-referrer" loading="lazy">`;
     } else {
       imageHtml = `<div class="recipe-card__image-placeholder">${cat.icon}</div>`;
     }
@@ -1050,7 +1050,7 @@
 
     let heroHtml;
     if (recipe.photo) {
-      heroHtml = `<img class="detail-hero" src="${recipe.photo}" alt="${escapeHtml(recipe.name)}">`;
+      heroHtml = `<img class="detail-hero" src="${recipe.photo}" alt="${escapeHtml(recipe.name)}" referrerpolicy="no-referrer">`;
     } else {
       heroHtml = `<div class="detail-hero-placeholder">${cat.icon}</div>`;
     }
