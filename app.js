@@ -25,6 +25,9 @@
   let editingId = null;
   let confirmCallback = null;
   let initialFormDataJson = '';
+  // Capture-phase targets for drag-to-close detection (see bindEvents)
+  let _mdTarget = null;
+  let _muTarget = null;
 
   // ---- DOM Refs ----
   const $ = (sel) => document.querySelector(sel);
@@ -1972,37 +1975,24 @@
       }
     });
 
-    // Prevent mouse events originating inside modal cards from reaching the overlay backdrop
-    // This is the correct way to prevent drag-out accidental closing
+    // Track true mousedown/mouseup origin in capture phase.
+    // Capture phase fires BEFORE any stopPropagation from child elements,
+    // so we always know exactly which element was truly pressed/released.
+    document.addEventListener('mousedown', (e) => { _mdTarget = e.target; }, true);
+    document.addEventListener('mouseup',   (e) => { _muTarget = e.target; }, true);
+
+    // Close modals on backdrop click — only when BOTH the true mousedown AND mouseup
+    // targets were the overlay backdrop itself. Any drag from inside the modal to
+    // outside will have _mdTarget set to an inner element, blocking the close.
     [dom.formModal, dom.detailModal, dom.settingsModal, dom.confirmModal].forEach(overlay => {
-      // Stop mousedown/mouseup from bubbling out of the inner modal card to the backdrop overlay
-      const card = overlay.querySelector('.modal');
-      if (card) {
-        card.addEventListener('mousedown', (e) => e.stopPropagation());
-        card.addEventListener('mouseup', (e) => e.stopPropagation());
-      }
-
-      // Now the overlay only receives mousedown/mouseup when the user presses directly on the backdrop
-      let backdropDown = false;
-
-      overlay.addEventListener('mousedown', () => {
-        // This only fires when backdrop is directly pressed (inner card blocked propagation)
-        backdropDown = true;
-      });
-
-      overlay.addEventListener('mouseup', () => {
-        if (backdropDown) {
-          backdropDown = false;
+      overlay.addEventListener('click', () => {
+        if (_mdTarget === overlay && _muTarget === overlay) {
           if (overlay === dom.formModal) {
             handleCancelForm();
           } else {
             closeModal(overlay);
           }
         }
-      });
-
-      overlay.addEventListener('mouseleave', () => {
-        backdropDown = false;
       });
     });
 

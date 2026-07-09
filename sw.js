@@ -1,4 +1,4 @@
-const CACHE_NAME = 'recipebox-v11';
+const CACHE_NAME = 'recipebox-v12';
 const ASSETS = [
   './',
   './index.html',
