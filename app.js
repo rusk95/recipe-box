@@ -1559,6 +1559,14 @@
       dom.btnDisconnectGDrive.style.display = 'block';
       dom.googleClientId.disabled = true;
     }
+
+    // Update top sync indicator
+    const topInd = $('#topSyncIndicator');
+    if (topInd) {
+      topInd.className = 'sync-indicator';
+      topInd.classList.add(`sync-indicator--${status}`);
+      topInd.title = `同期ステータス: ${text}`;
+    }
   }
 
   function connectGDrive() {
@@ -1930,6 +1938,12 @@
     // Settings
     dom.btnSettings.addEventListener('click', () => openModal(dom.settingsModal));
     dom.settingsClose.addEventListener('click', () => closeModal(dom.settingsModal));
+
+    // Top sync indicator click
+    const topInd = $('#topSyncIndicator');
+    if (topInd) {
+      topInd.addEventListener('click', () => openModal(dom.settingsModal));
+    }
 
     dom.btnExport.addEventListener('click', () => {
       exportData();

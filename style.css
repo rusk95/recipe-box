@@ -207,6 +207,60 @@ body::before {
   font-weight: 500;
 }
 
+/* --- Sync Status LED Indicator --- */
+.sync-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  background: var(--clr-surface-hover);
+  transition: all var(--transition-fast);
+}
+
+.sync-indicator:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .sync-indicator:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sync-indicator__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--clr-text-secondary);
+  opacity: 0.4;
+  transition: background-color var(--transition-base), box-shadow var(--transition-base), opacity var(--transition-base);
+}
+
+.sync-indicator--connected .sync-indicator__dot {
+  background-color: #10b981; /* Green */
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.sync-indicator--syncing .sync-indicator__dot {
+  background-color: #3b82f6; /* Blue */
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+  animation: sync-pulse 1.2s infinite ease-in-out;
+}
+
+.sync-indicator--error .sync-indicator__dot {
+  background-color: #ef4444; /* Red */
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+@keyframes sync-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
 /* --- Icon Buttons --- */
 .btn-icon {
   display: flex;
