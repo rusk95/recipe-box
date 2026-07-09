@@ -1463,6 +1463,19 @@
 
     if (gdriveClientId) {
       initTokenClient();
+
+      // Auto-connect silently in the background if token is expired/missing
+      if (!gdriveAccessToken) {
+        setGDriveStatus('syncing', '自動接続中...');
+        const tryAutoConnect = () => {
+          if (tokenClient) {
+            tokenClient.requestAccessToken({ prompt: '' });
+          } else {
+            setTimeout(tryAutoConnect, 250);
+          }
+        };
+        setTimeout(tryAutoConnect, 300);
+      }
     }
   }
 
@@ -1478,8 +1491,13 @@
       callback: (tokenResponse) => {
         if (tokenResponse.error !== undefined) {
           console.error(tokenResponse);
-          setGDriveStatus('error', '⚠️ ログイン認証に失敗しました');
-          showToast('⚠️ Google認証に失敗しました', 'error');
+          // If silent prompt auto-connect fails, do not show annoying toasts
+          if (tokenResponse.error === 'immediate_failed' || tokenResponse.error === 'interaction_required') {
+            setGDriveStatus('disconnected', '接続していません');
+          } else {
+            setGDriveStatus('error', '⚠️ ログイン認証に失敗しました');
+            showToast('⚠️ Google認証に失敗しました', 'error');
+          }
           return;
         }
 
@@ -1954,10 +1972,16 @@
       }
     });
 
-    // Close modals on overlay click
+    // Close modals on overlay click (robust mousedown check to prevent drag-out closing)
     [dom.formModal, dom.detailModal, dom.settingsModal, dom.confirmModal].forEach(overlay => {
+      let mousedownOnOverlay = false;
+
+      overlay.addEventListener('mousedown', (e) => {
+        mousedownOnOverlay = (e.target === overlay);
+      });
+
       overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
+        if (e.target === overlay && mousedownOnOverlay) {
           if (overlay === dom.formModal) {
             handleCancelForm();
           } else {
