@@ -1972,22 +1972,23 @@
       }
     });
 
-    // Close modals on overlay click (robust mousedown check to prevent drag-out closing)
+    // Close modals on overlay click (robust mousedown/mouseup check to prevent drag-out closing)
     [dom.formModal, dom.detailModal, dom.settingsModal, dom.confirmModal].forEach(overlay => {
-      let mousedownOnOverlay = false;
+      let mousedownTarget = null;
 
       overlay.addEventListener('mousedown', (e) => {
-        mousedownOnOverlay = (e.target === overlay);
+        mousedownTarget = e.target;
       });
 
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay && mousedownOnOverlay) {
+      overlay.addEventListener('mouseup', (e) => {
+        if (mousedownTarget === overlay && e.target === overlay) {
           if (overlay === dom.formModal) {
             handleCancelForm();
           } else {
             closeModal(overlay);
           }
         }
+        mousedownTarget = null;
       });
     });
 
