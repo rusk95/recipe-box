@@ -1972,23 +1972,37 @@
       }
     });
 
-    // Close modals on overlay click (robust mousedown/mouseup check to prevent drag-out closing)
+    // Prevent mouse events originating inside modal cards from reaching the overlay backdrop
+    // This is the correct way to prevent drag-out accidental closing
     [dom.formModal, dom.detailModal, dom.settingsModal, dom.confirmModal].forEach(overlay => {
-      let mousedownTarget = null;
+      // Stop mousedown/mouseup from bubbling out of the inner modal card to the backdrop overlay
+      const card = overlay.querySelector('.modal');
+      if (card) {
+        card.addEventListener('mousedown', (e) => e.stopPropagation());
+        card.addEventListener('mouseup', (e) => e.stopPropagation());
+      }
 
-      overlay.addEventListener('mousedown', (e) => {
-        mousedownTarget = e.target;
+      // Now the overlay only receives mousedown/mouseup when the user presses directly on the backdrop
+      let backdropDown = false;
+
+      overlay.addEventListener('mousedown', () => {
+        // This only fires when backdrop is directly pressed (inner card blocked propagation)
+        backdropDown = true;
       });
 
-      overlay.addEventListener('mouseup', (e) => {
-        if (mousedownTarget === overlay && e.target === overlay) {
+      overlay.addEventListener('mouseup', () => {
+        if (backdropDown) {
+          backdropDown = false;
           if (overlay === dom.formModal) {
             handleCancelForm();
           } else {
             closeModal(overlay);
           }
         }
-        mousedownTarget = null;
+      });
+
+      overlay.addEventListener('mouseleave', () => {
+        backdropDown = false;
       });
     });
 
