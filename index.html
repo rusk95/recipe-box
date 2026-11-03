@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -308,9 +308,12 @@
               </p>
             </div>
             
-            <div class="gdrive-status" id="gdriveStatus" style="display: none; margin-bottom: var(--space-md);">
-              <span class="gdrive-status__icon">🔄</span>
-              <span class="gdrive-status__text" id="gdriveStatusText">未接続</span>
+            <div class="gdrive-status" id="gdriveStatus" role="status" aria-live="polite" aria-atomic="true" aria-busy="false" style="display: none; margin-bottom: var(--space-md);">
+              <svg class="gdrive-status__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg>
+              <div class="gdrive-status__content">
+                <span class="gdrive-status__text" id="gdriveStatusText">未接続</span>
+                <span class="gdrive-status__time" id="gdriveLastSync" hidden></span>
+              </div>
             </div>
 
             <div class="settings-buttons-row" style="display: flex; flex-wrap: wrap; gap: var(--space-sm);">
@@ -337,7 +340,7 @@
             <p class="settings-hint">この操作は元に戻せません。事前にエクスポートすることをお勧めします。</p>
           </div>
         </div>
-        <p class="settings-hint" id="appVersion">RecipeBox v16</p>
+        <p class="settings-hint" id="appVersion">RecipeBox v17</p>
       </div>
     </div>
   </div>
@@ -360,6 +363,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=17"></script>
 </body>
 </html>

@@ -237,13 +237,15 @@ body::before {
   transition: background-color var(--transition-base), box-shadow var(--transition-base), opacity var(--transition-base);
 }
 
-.sync-indicator--connected .sync-indicator__dot {
+.sync-indicator--connected .sync-indicator__dot,
+.sync-indicator--synced .sync-indicator__dot {
   background-color: #10b981; /* Green */
   opacity: 1;
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
 }
 
-.sync-indicator--syncing .sync-indicator__dot {
+.sync-indicator--syncing .sync-indicator__dot,
+.sync-indicator--connecting .sync-indicator__dot {
   background-color: #3b82f6; /* Blue */
   opacity: 1;
   box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
@@ -1952,13 +1954,17 @@ body::before {
   color: var(--clr-primary-400);
 }
 
-.gdrive-status--connected {
+.gdrive-status--connected,
+.gdrive-status--synced {
   background: rgba(34, 197, 94, 0.08);
   border-color: rgba(34, 197, 94, 0.15);
   color: #16a34a;
 }
 
-[data-theme="dark"] .gdrive-status--connected {
+[data-theme="dark"] .gdrive-status--connected,
+[data-theme="dark"] .gdrive-status--synced {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.2);
   color: #4ade80;
 }
 
@@ -1966,6 +1972,65 @@ body::before {
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.15);
   color: var(--clr-danger);
+}
+
+[data-theme="dark"] .gdrive-status--error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.gdrive-status__icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.gdrive-status__content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gdrive-status__time {
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.gdrive-status__time[hidden] { display: none; }
+
+.gdrive-status--syncing,
+.gdrive-status--connecting {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.2);
+  color: #2563eb;
+}
+
+[data-theme="dark"] .gdrive-status--syncing,
+[data-theme="dark"] .gdrive-status--connecting {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.gdrive-status--disconnected,
+[data-theme="dark"] .gdrive-status--disconnected {
+  background: var(--clr-surface-hover);
+  border-color: var(--clr-border-subtle);
+  color: var(--clr-text-secondary);
+}
+
+.gdrive-status--syncing .gdrive-status__icon,
+.gdrive-status--connecting .gdrive-status__icon {
+  animation: gdrive-spin 1s linear infinite;
+}
+
+@keyframes gdrive-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gdrive-status__icon { animation: none !important; }
 }
 
 .btn--danger-outline {

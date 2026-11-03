@@ -95,6 +95,7 @@
     googleClientId:  $('#googleClientId'),
     gdriveStatus:    $('#gdriveStatus'),
     gdriveStatusText:$('#gdriveStatusText'),
+    gdriveLastSync:  $('#gdriveLastSync'),
     btnConnectGDrive:$('#btnConnectGDrive'),
     btnSyncNow:      $('#btnSyncNow'),
     btnDisconnectGDrive:$('#btnDisconnectGDrive'),
@@ -1545,12 +1546,18 @@
   // GOOGLE DRIVE SYNC
   // ============================================
   const GDRIVE_FILE_NAME = 'recipebox_data.json';
+  const GDRIVE_LAST_SYNC_KEY = 'recipebox_gdrive_last_sync';
   let gdriveAccessToken = null;
   let gdriveClientId = null;
+  let gdriveLastSyncedAt = null;
+  let gdriveSyncsInFlight = 0;
+  let gdriveSyncFailed = false;
 
   let tokenClient = null;
 
   function initGDrive() {
+    const lastSync = Number(localStorage.getItem(GDRIVE_LAST_SYNC_KEY));
+    gdriveLastSyncedAt = Number.isFinite(lastSync) && lastSync > 0 ? lastSync : null;
     gdriveClientId = localStorage.getItem('recipebox_gdrive_client_id') || '';
     dom.googleClientId.value = gdriveClientId;
 
@@ -1559,13 +1566,13 @@
 
     if (token && expiry && Date.now() < parseInt(expiry, 10)) {
       gdriveAccessToken = token;
-      setGDriveStatus('connected', 'Google ドライブと同期中');
+      setGDriveStatus('connected', 'Googleドライブに接続済み');
       
       // Auto sync on start
       syncWithGDrive(true); // silent
     } else {
       gdriveAccessToken = null;
-      setGDriveStatus('disconnected', '接続していません');
+      setGDriveStatus('disconnected', '未接続');
     }
 
     if (gdriveClientId) {
@@ -1573,7 +1580,7 @@
 
       // Auto-connect silently in the background if token is expired/missing
       if (!gdriveAccessToken) {
-        setGDriveStatus('syncing', '自動接続中...');
+        setGDriveStatus('connecting', 'Googleアカウントに接続中…');
         const tryAutoConnect = () => {
           if (tokenClient) {
             tokenClient.requestAccessToken({ prompt: '' });
@@ -1600,7 +1607,7 @@
           console.error(tokenResponse);
           // If silent prompt auto-connect fails, do not show annoying toasts
           if (tokenResponse.error === 'immediate_failed' || tokenResponse.error === 'interaction_required') {
-            setGDriveStatus('disconnected', '接続していません');
+            setGDriveStatus('disconnected', '未接続');
           } else {
             setGDriveStatus('error', '⚠️ ログイン認証に失敗しました');
             showToast('⚠️ Google認証に失敗しました', 'error');
@@ -1616,7 +1623,7 @@
         localStorage.setItem('recipebox_gdrive_token_expiry', expiryTime);
         gdriveAccessToken = accessToken;
 
-        setGDriveStatus('connected', 'Google ドライブと同期中');
+        setGDriveStatus('connected', 'Googleドライブに接続済み');
         showToast('☁️ Googleドライブと接続しました！');
 
         syncWithGDrive();
@@ -1629,47 +1636,50 @@
           }
         }, refreshIn);
       },
+      error_callback: () => {
+        if (gdriveSyncsInFlight) return;
+        setGDriveStatus(gdriveAccessToken ? 'connected' : 'disconnected',
+          gdriveAccessToken ? 'Googleドライブに接続済み' : '未接続（接続を完了できませんでした）');
+      },
     });
   }
 
   function setGDriveStatus(status, text) {
+    const busy = status === 'syncing' || status === 'connecting';
+    const hasToken = !!gdriveAccessToken;
     dom.gdriveStatus.style.display = 'flex';
-    dom.gdriveStatus.className = 'gdrive-status';
+    dom.gdriveStatus.className = `gdrive-status gdrive-status--${status}`;
+    dom.gdriveStatus.setAttribute('aria-busy', String(busy));
     dom.gdriveStatusText.textContent = text;
-
-    if (status === 'connected') {
-      dom.gdriveStatus.classList.add('gdrive-status--connected');
-      dom.btnConnectGDrive.style.display = 'none';
-      dom.btnSyncNow.style.display = 'block';
-      dom.btnDisconnectGDrive.style.display = 'block';
-      dom.googleClientId.disabled = true;
-    } else if (status === 'disconnected') {
-      dom.gdriveStatus.style.display = 'none';
-      dom.btnConnectGDrive.style.display = 'block';
-      dom.btnSyncNow.style.display = 'none';
-      dom.btnDisconnectGDrive.style.display = 'none';
-      dom.googleClientId.disabled = false;
-    } else if (status === 'error') {
-      dom.gdriveStatus.classList.add('gdrive-status--error');
-      dom.btnConnectGDrive.style.display = 'block';
-      dom.btnSyncNow.style.display = 'none';
-      dom.btnDisconnectGDrive.style.display = 'none';
-      dom.googleClientId.disabled = false;
-    } else if (status === 'syncing') {
-      dom.gdriveStatus.classList.add('gdrive-status--connected');
-      dom.btnConnectGDrive.style.display = 'none';
-      dom.btnSyncNow.style.display = 'block';
-      dom.btnSyncNow.disabled = true;
-      dom.btnDisconnectGDrive.style.display = 'block';
-      dom.googleClientId.disabled = true;
-    }
+    const icon = dom.gdriveStatus.querySelector('.gdrive-status__icon');
+    icon.innerHTML = busy
+      ? '<path d="M20 7v5h-5M4 17v-5h5M6.1 6.1a8 8 0 0 1 13.2 3M4.7 14.9a8 8 0 0 0 13.2 3"/>'
+      : status === 'synced' ? '<path d="m5 12 4 4L19 6"/>'
+      : status === 'error' ? '<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>'
+      : '<path d="M7 18a5 5 0 0 1-.9-9.9 6 6 0 0 1 11.5 1.5A4.2 4.2 0 0 1 18 18H7Z"/>';
+    dom.gdriveLastSync.hidden = !gdriveLastSyncedAt || status === 'disconnected';
+    dom.gdriveLastSync.textContent = gdriveLastSyncedAt
+      ? `最終同期：${new Intl.DateTimeFormat('ja-JP', {
+        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+      }).format(new Date(gdriveLastSyncedAt))}` : '';
+    dom.btnConnectGDrive.style.display = hasToken ? 'none' : 'block';
+    dom.btnConnectGDrive.disabled = busy;
+    dom.btnSyncNow.style.display = hasToken ? 'block' : 'none';
+    dom.btnSyncNow.disabled = busy;
+    dom.btnSyncNow.textContent = status === 'syncing' ? '同期中…'
+      : status === 'error' ? 'もう一度同期' : '今すぐ同期';
+    dom.btnDisconnectGDrive.style.display = hasToken ? 'block' : 'none';
+    dom.btnDisconnectGDrive.disabled = busy;
+    dom.googleClientId.disabled = hasToken || busy;
 
     // Update top sync indicator
     const topInd = $('#topSyncIndicator');
     if (topInd) {
       topInd.className = 'sync-indicator';
       topInd.classList.add(`sync-indicator--${status}`);
-      topInd.title = `同期ステータス: ${text}`;
+      const lastSyncText = !dom.gdriveLastSync.hidden ? `（${dom.gdriveLastSync.textContent}）` : '';
+      topInd.title = `同期ステータス: ${text}${lastSyncText}`;
+      topInd.setAttribute('aria-label', topInd.title);
     }
   }
 
@@ -1683,6 +1693,7 @@
     localStorage.setItem('recipebox_gdrive_client_id', clientId);
     gdriveClientId = clientId;
 
+    setGDriveStatus('connecting', 'Googleアカウントに接続中…');
     initTokenClient();
 
     // Trigger request access token popup
@@ -1699,8 +1710,10 @@
   function disconnectGDrive() {
     localStorage.removeItem('recipebox_gdrive_token');
     localStorage.removeItem('recipebox_gdrive_token_expiry');
+    localStorage.removeItem(GDRIVE_LAST_SYNC_KEY);
     gdriveAccessToken = null;
-    setGDriveStatus('disconnected', '接続を解除しました');
+    gdriveLastSyncedAt = null;
+    setGDriveStatus('disconnected', '未接続');
     showToast('☁️ Googleドライブの接続を解除しました');
   }
 
@@ -1712,10 +1725,10 @@
   async function syncWithGDrive(silent = false) {
     if (!gdriveAccessToken) return;
 
-    if (!silent) {
-      setGDriveStatus('syncing', '同期中...');
-      dom.btnSyncNow.disabled = true;
-    }
+    if (gdriveSyncsInFlight === 0) gdriveSyncFailed = false;
+    gdriveSyncsInFlight++;
+    // Silent sync suppresses toasts, but must still show its real progress.
+    setGDriveStatus('syncing', '同期中…');
 
     try {
       // 1. Search for file
@@ -1757,11 +1770,10 @@
           }
         );
 
-        if (downloadRes.ok) {
-          const cloudData = await downloadRes.json();
-          driveRecipes = cloudData.recipes || [];
-          driveDeletedIds = cloudData.deletedIds || [];
-        }
+        if (!downloadRes.ok) throw new Error('Download failed');
+        const cloudData = await downloadRes.json();
+        driveRecipes = cloudData.recipes || [];
+        driveDeletedIds = cloudData.deletedIds || [];
       }
 
       // Merge deleted tombstones (Local + Cloud), and purge ones older than 30 days
@@ -1866,22 +1878,21 @@
         throw new Error('Upload failed');
       }
 
-      setGDriveStatus('connected', '同期完了');
+      gdriveLastSyncedAt = Date.now();
+      try { localStorage.setItem(GDRIVE_LAST_SYNC_KEY, String(gdriveLastSyncedAt)); } catch {}
       if (!silent) showToast('☁️ Googleドライブと同期しました');
-      
-      // Auto restore status text after 5s
-      setTimeout(() => {
-        if (gdriveAccessToken) {
-          setGDriveStatus('connected', 'Google ドライブと同期中');
-        }
-      }, 5000);
 
     } catch (err) {
       console.error(err);
-      setGDriveStatus('error', '⚠️ 同期エラーが発生しました');
+      gdriveSyncFailed = true;
       if (!silent) showToast('⚠️ 同期中にエラーが発生しました', 'error');
     } finally {
-      dom.btnSyncNow.disabled = false;
+      gdriveSyncsInFlight--;
+      if (gdriveAccessToken) {
+        if (gdriveSyncsInFlight > 0) setGDriveStatus('syncing', '同期中…');
+        else if (gdriveSyncFailed) setGDriveStatus('error', '同期に失敗しました。もう一度お試しください');
+        else setGDriveStatus('synced', '同期済み');
+      }
     }
   }
 
