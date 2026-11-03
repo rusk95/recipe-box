@@ -1,44 +1,56 @@
-const CACHE_NAME = 'recipebox-v14';
+const CACHE_NAME = 'recipebox-v15';
 const ASSETS = [
   './',
   './index.html',
-  './style.css',
-  './app.js',
+  './style.css?v=15',
+  './app.js?v=15',
   './manifest.json'
 ];
 
-// Install — cache core assets
+// Bypass the browser HTTP cache when installing an updated app.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload' })))
+    )
   );
   self.skipWaiting();
 });
 
-// Activate — clean up old caches
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter((key) => key.startsWith('recipebox-') && key !== CACHE_NAME)
+      .map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
-// Fetch — network first, fall back to cache
 self.addEventListener('fetch', (event) => {
-  // Recipe APIs and Google Drive manage their own responses; cache app files only.
+  // External recipe and Drive requests are never cached by the app.
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)));
+  event.respondWith((async () => {
+    try {
+      // Revalidate even when GitHub Pages gives app files a ten-minute lifetime.
+      const response = await fetch(event.request, { cache: 'no-cache' });
+      if (response.ok) {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(event.request, response.clone());
+        } catch {
+          // A full cache must not prevent a fresh page from opening.
         }
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
+      }
+      return response;
+    } catch {
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
+      if (event.request.mode === 'navigate') {
+        return (await caches.match('./index.html')) || Response.error();
+      }
+      return Response.error();
+    }
+  })());
 });

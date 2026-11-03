@@ -684,6 +684,19 @@
   // ============================================
   // URL AUTO-IMPORT
   // ============================================
+  async function fetchWithTimeout(url, options, timeoutMs, readResponse) {
+    // AbortSignal.timeout is unavailable on older iPhones. Keep the deadline
+    // active until the response body has finished downloading as well.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      return response.ok ? await readResponse(response) : null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   const RECIPE_FETCHERS = [
     {
       url: (url) => `https://r.jina.ai/${url}`,
@@ -733,13 +746,9 @@
     // Parse each response before accepting it, so an error page cannot stop fallback.
     for (const fetcher of RECIPE_FETCHERS) {
       try {
-        const res = await fetch(fetcher.url(url), {
-          headers: fetcher.headers,
-          signal: AbortSignal.timeout(fetcher.timeout)
-        });
-        if (!res.ok) continue;
-        const html = await res.text();
-        if (!html.trim()) continue;
+        const html = await fetchWithTimeout(fetcher.url(url),
+          { headers: fetcher.headers }, fetcher.timeout, response => response.text());
+        if (!html?.trim()) continue;
         receivedPage = true;
 
         setImportStatus('loading', 'レシピ情報を解析中...');
@@ -1017,16 +1026,13 @@
   async function fetchImageAsBase64(imageUrl) {
     // 1. Try fetching directly first (some CDNs allow CORS for images)
     try {
-      const res = await fetch(imageUrl, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) {
-        const blob = await res.blob();
-        if (blob.type.startsWith('image/')) {
-          return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
-            reader.readAsDataURL(blob);
-          });
-        }
+      const blob = await fetchWithTimeout(imageUrl, {}, 5000, response => response.blob());
+      if (blob?.type.startsWith('image/')) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
+          reader.readAsDataURL(blob);
+        });
       }
     } catch (e) {
       // Fallback to proxies
@@ -1035,16 +1041,13 @@
     // 2. Try via Image/CORS proxies
     for (const proxy of IMAGE_PROXIES) {
       try {
-        const res = await fetch(proxy(imageUrl), { signal: AbortSignal.timeout(8000) });
-        if (res.ok) {
-          const blob = await res.blob();
-          if (!blob.type.startsWith('image/')) continue;
-          return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
-            reader.readAsDataURL(blob);
-          });
-        }
+        const blob = await fetchWithTimeout(proxy(imageUrl), {}, 8000, response => response.blob());
+        if (!blob?.type.startsWith('image/')) continue;
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
+          reader.readAsDataURL(blob);
+        });
       } catch { continue; }
     }
     return null;
@@ -2036,7 +2039,9 @@
   // ============================================
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+        .then(registration => registration.update())
+        .catch(() => {});
     }
   }
 
