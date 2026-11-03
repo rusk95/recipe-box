@@ -758,6 +758,10 @@
 
         const data = extractJsonLd(doc) || extractFromMeta(doc, url);
         if (!data?.name) continue;
+        if (!data.ingredientGroups?.length) {
+          const entries = extractIngredientEntries(doc);
+          if (entries) data.ingredientGroups = groupSourceIngredients(entries, data.steps || []);
+        }
         if (!data.photoUrl) {
           data.photoUrl = doc.querySelector('meta[property="og:image"]')?.content || null;
         }
@@ -836,10 +840,9 @@
 
         // Ingredients → ingredientGroups
         if (data.recipeIngredient && Array.isArray(data.recipeIngredient)) {
-          result.ingredientGroups = [{
-            title: '',
-            items: data.recipeIngredient.map(ing => parseIngredientString(ing))
-          }];
+          const entries = extractIngredientEntries(doc, data.recipeIngredient)
+            || data.recipeIngredient.map(parseSourceIngredient);
+          result.ingredientGroups = groupSourceIngredients(entries, parseInstructions(data.recipeInstructions));
         }
 
         // Steps
@@ -870,6 +873,104 @@
       }
     }
     return null;
+  }
+
+  function extractIngredientEntries(doc, ingredients = []) {
+    // Cookpad's visible list retains headings and indentation omitted by JSON-LD.
+    const rows = Array.from(doc.querySelectorAll('.ingredient-list li[id^="ingredient_"]'));
+    if (!rows.length) return null;
+    const entries = [];
+    for (const row of rows) {
+      const name = row.querySelector('span');
+      const amount = row.querySelector('bdi');
+      if (!name || !amount || !name.textContent.trim()) return null;
+      entries.push({
+        raw: name.textContent,
+        name: name.textContent.trim(),
+        amount: amount.textContent.trim(),
+        heading: row.classList.contains('headline')
+      });
+    }
+    // Reject a partial or unrelated list rather than losing or duplicating ingredients.
+    if (ingredients.length) {
+      const items = entries.filter(entry => !entry.heading);
+      const normalize = text => text.normalize('NFKC').replace(/\s+/g, '');
+      if (items.length !== ingredients.length || items.some((item, index) =>
+        normalize(item.name + item.amount) !== normalize(ingredients[index]))) return null;
+    }
+    return entries;
+  }
+
+  function ingredientMarker(name) {
+    // Only explicit source prefixes; do not classify by ingredient names.
+    const match = name.match(/^(?:[（(]([A-Za-zＡ-Ｚａ-ｚ])[）)]\s*|([A-ZＡ-Ｚ])(?:[.．:：)）]\s*|\s+|(?=[^\x00-\x7f]))|([●○◎★☆◆◇■□▲△▼▽])\s*)/);
+    if (!match) return null;
+    const rest = name.slice(match[0].length).trim();
+    if (!rest) return null;
+    return { key: (match[1] || match[2] || match[3]).normalize('NFKC').toUpperCase(), name: rest };
+  }
+
+  function groupSourceIngredients(entries, steps) {
+    const markers = entries.map(entry => entry.heading ? null : (entry.marker || ingredientMarker(entry.name)));
+    const counts = new Map();
+    markers.forEach(marker => {
+      if (marker) counts.set(marker.key, (counts.get(marker.key) || 0) + 1);
+    });
+    const instructions = steps.join('\n').normalize('NFKC');
+    const isSourceGroup = marker => marker && ((counts.get(marker.key) || 0) > 1
+      || new RegExp(`(?:^|[^A-Za-z])${marker.key}(?:の|を|と|は|に|[)）])`).test(instructions));
+    const groups = [];
+    let current = null;
+    let heading = null;
+    let activeMarker = null;
+    entries.forEach((entry, index) => {
+      if (entry.heading) {
+        const next = entries[index + 1];
+        heading = { title: entry.name, indented: !!next && /^\s/.test(next.raw) };
+        current = null;
+        activeMarker = null;
+        return;
+      }
+      if (heading?.indented && !/^\s/.test(entry.raw)) {
+        heading = null;
+        current = null;
+      }
+      const marker = isSourceGroup(markers[index]) ? markers[index] : null;
+      if ((marker?.key || null) !== activeMarker) {
+        // The first marked run after a heading belongs to that explicit heading.
+        if (current?.items.length) heading = null;
+        current = null;
+      }
+      if (!current) {
+        current = { title: heading?.title || (marker ? `${marker.key}の材料` : ''), items: [] };
+        groups.push(current);
+      }
+      current.items.push({ name: marker ? marker.name : entry.name, amount: entry.amount });
+      activeMarker = marker?.key || null;
+    });
+    // Keep unmarked ingredients separate when they follow a marked group.
+    groups.forEach((group, index) => {
+      if (index > 0 && !group.title) group.title = '分類なし';
+    });
+    return groups;
+  }
+
+  function parseSourceIngredient(raw) {
+    const text = raw.trim();
+    const heading = text.match(/^(?:【(.+)】|\[(.+)\]|[（(]([A-Za-zＡ-Ｚａ-ｚ])[）)])$/);
+    if (heading) return { raw, name: heading[1] || heading[2] || heading[3], amount: '', heading: true };
+    const marker = ingredientMarker(text);
+    const item = parseIngredientString(marker ? marker.name : text);
+    // A standalone heading symbol is explicit when no quantity follows it.
+    if (!item.amount && /^[■□◆◇]/.test(text)) {
+      return { raw, name: text.slice(1).trim(), amount: '', heading: true };
+    }
+    return {
+      raw,
+      name: marker ? text.slice(0, text.length - marker.name.length) + item.name : item.name,
+      amount: item.amount,
+      marker: marker ? { key: marker.key, name: item.name } : null
+    };
   }
 
   function extractFromMeta(doc, url) {
