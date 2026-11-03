@@ -684,15 +684,21 @@
   // ============================================
   // URL AUTO-IMPORT
   // ============================================
-  const CORS_PROXIES = [
-    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+  const RECIPE_FETCHERS = [
+    {
+      url: (url) => `https://r.jina.ai/${url}`,
+      headers: { 'X-Respond-With': 'html' },
+      timeout: 20000
+    },
+    {
+      url: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      timeout: 8000
+    }
   ];
 
   const IMAGE_PROXIES = [
     (url) => `https://images.weserv.nl/?url=${encodeURIComponent(url)}`,
-    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
   ];
 
   // Category auto-detection keywords
@@ -721,48 +727,42 @@
   async function fetchRecipeFromUrl(url) {
     setImportStatus('loading', 'レシピページを取得中...');
 
-    let html = null;
+    let recipeData = null;
+    let receivedPage = false;
 
-    // Try each CORS proxy
-    for (const proxy of CORS_PROXIES) {
+    // Parse each response before accepting it, so an error page cannot stop fallback.
+    for (const fetcher of RECIPE_FETCHERS) {
       try {
-        const res = await fetch(proxy(url), { signal: AbortSignal.timeout(15000) });
-        if (res.ok) {
-          html = await res.text();
-          break;
+        const res = await fetch(fetcher.url(url), {
+          headers: fetcher.headers,
+          signal: AbortSignal.timeout(fetcher.timeout)
+        });
+        if (!res.ok) continue;
+        const html = await res.text();
+        if (!html.trim()) continue;
+        receivedPage = true;
+
+        setImportStatus('loading', 'レシピ情報を解析中...');
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const title = doc.querySelector('title')?.textContent || '';
+        if (/just a moment|access denied|attention required|connection timed out|service unavailable|^error\b/i.test(title)) continue;
+
+        const data = extractJsonLd(doc) || extractFromMeta(doc, url);
+        if (!data?.name) continue;
+        if (!data.photoUrl) {
+          data.photoUrl = doc.querySelector('meta[property="og:image"]')?.content || null;
         }
+        recipeData = data;
+        break;
       } catch {
         continue;
       }
     }
 
-    if (!html) {
-      setImportStatus('error', '⚠️ ページを取得できませんでした。URLを確認してください。');
-      return null;
-    }
-
-    setImportStatus('loading', 'レシピ情報を解析中...');
-
-    // Parse HTML
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    // Try JSON-LD (schema.org/Recipe)
-    let recipeData = extractJsonLd(doc);
-
-    // Fallback: meta tags + page content heuristics
     if (!recipeData) {
-      recipeData = extractFromMeta(doc, url);
-    } else if (!recipeData.photoUrl) {
-      // If JSON-LD successfully parsed but has no photo, attempt to extract og:image from meta
-      const metaData = extractFromMeta(doc, url);
-      if (metaData && metaData.photoUrl) {
-        recipeData.photoUrl = metaData.photoUrl;
-      }
-    }
-
-    if (!recipeData || !recipeData.name) {
-      setImportStatus('error', '⚠️ レシピ情報を自動取得できませんでした。手動で入力してください。');
+      setImportStatus('error', receivedPage
+        ? '⚠️ レシピ情報を読み取れませんでした。元のページを確認するか、手動で入力してください。'
+        : '⚠️ 取得サービスに接続できませんでした。通信環境を確認し、時間をおいて再試行してください。URLが正しくても取得できない場合があります。');
       return null;
     }
 
@@ -821,7 +821,7 @@
         // Servings
         if (data.recipeYield) {
           const yieldStr = Array.isArray(data.recipeYield) ? data.recipeYield[0] : data.recipeYield;
-          const yieldMatch = String(yieldStr).match(/(\d+)/);
+          const yieldMatch = String(yieldStr).normalize('NFKC').match(/(\d+)/);
           if (yieldMatch) result.servings = parseInt(yieldMatch[1], 10);
         }
 
@@ -906,7 +906,7 @@
     str = str.trim();
 
     // Common patterns: "鶏もも肉 300g", "鶏もも肉：300g", "鶏もも肉…300g"
-    const separators = /[：:\s…・]+/;
+    const separators = /[：:\s…]+/;
     const parts = str.split(separators);
 
     if (parts.length >= 2) {
@@ -1897,7 +1897,8 @@
         return;
       }
       try {
-        new URL(url);
+        const parsedUrl = new URL(url);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('Unsupported URL');
       } catch {
         showToast('⚠️ 有効なURLを入力してください', 'error');
         dom.importUrlInput.focus();
@@ -1905,11 +1906,13 @@
       }
 
       dom.btnFetchUrl.disabled = true;
-      const data = await fetchRecipeFromUrl(url);
-      dom.btnFetchUrl.disabled = false;
-
-      if (data) {
-        applyFetchedData(data);
+      try {
+        const data = await fetchRecipeFromUrl(url);
+        if (data) applyFetchedData(data);
+      } catch {
+        setImportStatus('error', '⚠️ レシピの読み込みに失敗しました。もう一度お試しください。');
+      } finally {
+        dom.btnFetchUrl.disabled = false;
       }
     });
 

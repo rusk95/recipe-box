@@ -1,4 +1,4 @@
-const CACHE_NAME = 'recipebox-v13';
+const CACHE_NAME = 'recipebox-v14';
 const ASSETS = [
   './',
   './index.html',
@@ -27,11 +27,16 @@ self.addEventListener('activate', (event) => {
 
 // Fetch — network first, fall back to cache
 self.addEventListener('fetch', (event) => {
+  // Recipe APIs and Google Drive manage their own responses; cache app files only.
+  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        if (response.ok) {
+          const clone = response.clone();
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))
