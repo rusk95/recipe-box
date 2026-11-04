@@ -739,6 +739,20 @@
   }
 
   async function fetchRecipeFromUrl(url) {
+    const source = new URL(url);
+    const isTikTok = /^(?:(?:www|m|vm|vt)\.)?tiktok\.com$/.test(source.hostname);
+    const videoId = source.pathname.match(/^\/@[^/]+\/video\/(\d+)\/?$/)?.[1];
+    if (isTikTok) {
+      const shortLink = /^\/t\/[A-Za-z0-9]+\/?$/.test(source.pathname)
+        || (/^(vm|vt)\.tiktok\.com$/.test(source.hostname) && /^\/[A-Za-z0-9]+\/?$/.test(source.pathname));
+      if (!videoId && !shortLink) {
+        setImportStatus('error', 'TikTokで動画を開き、「共有」からコピーしたリンクを貼り付けてください。');
+        return null;
+      }
+      source.search = '';
+      source.hash = '';
+      url = source.href;
+    }
     setImportStatus('loading', 'レシピページを取得中...');
 
     let recipeData = null;
@@ -757,7 +771,7 @@
         const title = doc.querySelector('title')?.textContent || '';
         if (/just a moment|access denied|attention required|connection timed out|service unavailable|^error\b/i.test(title)) continue;
 
-        const data = extractJsonLd(doc) || extractFromMeta(doc, url);
+        const data = isTikTok ? extractTikTokPost(doc, videoId) : (extractJsonLd(doc) || extractFromMeta(doc, url));
         if (!data?.name) continue;
         if (!data.ingredientGroups?.length) {
           const entries = extractIngredientEntries(doc);
@@ -774,6 +788,10 @@
     }
 
     if (!recipeData) {
+      if (isTikTok) {
+        setImportStatus('error', 'TikTokの投稿文を取得できませんでした。元レシピURLにリンクを入力して、手動で保存できます。');
+        return null;
+      }
       setImportStatus('error', receivedPage
         ? '⚠️ レシピ情報を読み取れませんでした。元のページを確認するか、手動で入力してください。'
         : '⚠️ 取得サービスに接続できませんでした。通信環境を確認し、時間をおいて再試行してください。URLが正しくても取得できない場合があります。');
@@ -789,10 +807,87 @@
 
     // Auto-detect category
     recipeData.category = detectCategory(recipeData.name, recipeData.ingredientGroups);
-    recipeData.url = url;
+    recipeData.url ||= url;
 
-    setImportStatus('success', `✅「${recipeData.name}」を取得しました！`);
+    if (isTikTok) {
+      const fields = [];
+      if (recipeData.ingredientGroups.length) fields.push('材料');
+      if (recipeData.steps.length) fields.push('作り方');
+      const status = fields.length ? `TikTokの投稿文から${fields.join('・')}を取得しました。` : 'TikTokの投稿リンクを取得しました。';
+      setImportStatus('success', status + (recipeData.steps.length ? '' : '作り方は元動画で確認できます。'));
+    } else {
+      setImportStatus('success', `✅「${recipeData.name}」を取得しました！`);
+    }
     return recipeData;
+  }
+
+  function extractTikTokPost(doc, expectedId) {
+    const script = doc.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__');
+    if (!script) return null;
+    const detail = JSON.parse(script.textContent).__DEFAULT_SCOPE__?.['webapp.video-detail'];
+    const post = detail?.itemInfo?.itemStruct;
+    if (!post || !/^\d+$/.test(post.id) || (expectedId && post.id !== expectedId)) return null;
+
+    // The public page may flatten desc. The separate caption entries retain line breaks.
+    const caption = (Array.isArray(post.contents) ? post.contents.map(part => typeof part?.desc === 'string' ? part.desc : '').join('\n').trim() : '')
+      || (typeof post.desc === 'string' ? post.desc.trim() : '');
+    const entries = [];
+    const steps = [];
+    let section = '';
+    let title = '';
+    let servings = null;
+    for (const raw of caption.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || /^[.。・…―\-\s]+$/.test(line)) continue;
+      if (line.startsWith('#')) break;
+      const heading = line.replace(/^[\s【〖\[〈＜●○◎■□◆◇▼▷・📝🍴]+/u, '');
+      if (/^材料(?=$|[\s】〗\]〉＞:：✍（(]|[0-9０-９]+人[分前])/u.test(heading)) {
+        section = 'ingredients';
+        const servingCount = heading.normalize('NFKC').match(/(\d+)人(?:分|前)/);
+        if (servingCount) servings = Number(servingCount[1]);
+        continue;
+      }
+      if (/^(?:作り方|手順)(?=$|[\s】〗\]〉＞:：])/u.test(heading)) {
+        section = 'steps';
+        continue;
+      }
+      if (/^(?:コツ|ポイント|補足)(?=$|[\s】〗\]〉＞:：])/u.test(heading)) break;
+      if (/^[※＊*]/.test(line)) continue;
+      const numbered = line.match(/^(?:[①-⑳]|\d{1,2}[.．、)）])\s*(.+)$/);
+      if (numbered && section === 'ingredients' && entries.length) section = 'steps';
+      if (section === 'steps') {
+        steps.push(numbered ? numbered[1] : line);
+      } else if (section === 'ingredients') {
+        entries.push(...parseTikTokIngredient(line));
+      } else if (!title) {
+        title = line.split(/\s+#/)[0].slice(0, 64);
+      }
+    }
+
+    const ingredientGroups = groupSourceIngredients(entries, steps);
+    const author = post.author?.uniqueId;
+    const ingredients = getAllIngredients({ ingredientGroups });
+    if (!title && /(?:^|\s)#スープ(?:\s|#|$)/.test(caption) && ingredients.length >= 2) {
+      title = `${ingredients[0].name}と${ingredients[1].name}のスープ`;
+    }
+    return {
+      name: title || (author ? `TikTokレシピ（@${author}）` : 'TikTokレシピ'),
+      ingredientGroups, steps, servings, memo: caption,
+      photoUrl: typeof post.video?.cover === 'string' && post.video.cover.startsWith('https://') ? post.video.cover : null,
+      url: /^[\w.]+$/.test(author || '') ? `https://www.tiktok.com/@${author}/video/${post.id}` : null
+    };
+  }
+
+  function parseTikTokIngredient(line) {
+    const text = line.replace(/^[-・•]\s*/, '');
+    const entry = parseSourceIngredient(text);
+    const quantity = entry.amount.normalize('NFKC');
+    if (entry.heading || /^(?:[~〜約]?\s*(?:\d|大さじ|小さじ|カップ)|適量|少々|お好み|ひとつまみ)/.test(quantity)) return [entry];
+    // An explicit comma-separated list can name seasonings without giving amounts.
+    if (/^[^、。\s]{1,24}(?:、[^、。\s]{1,24})+$/.test(text)) {
+      return text.split('、').map(name => ({ raw: name, name, amount: '' }));
+    }
+    return [];
   }
 
 
