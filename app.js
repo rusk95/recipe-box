@@ -123,8 +123,8 @@
     }
   }
 
-  function saveRecipes() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(recipes));
+  function saveRecipes(list = recipes) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
   }
 
   function generateId() {
@@ -340,12 +340,13 @@
       } catch {}
     }
 
+    const previousRecipes = recipes;
     if (editingId) {
       const idx = recipes.findIndex(r => r.id === editingId);
       if (idx !== -1) {
+        recipes = [...recipes];
         recipes[idx] = { ...recipes[idx], ...data, updatedAt: Date.now() };
       }
-      showToast('✅ レシピを更新しました');
     } else {
       const newRecipe = {
         id: generateId(),
@@ -354,11 +355,16 @@
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
-      recipes.unshift(newRecipe);
-      showToast('🎉 レシピを追加しました');
+      recipes = [newRecipe, ...recipes];
     }
-    saveRecipes();
+    try {
+      saveRecipes();
+    } catch (error) {
+      recipes = previousRecipes;
+      throw error;
+    }
     renderRecipes();
+    showToast(editingId ? '✅ レシピを更新しました' : '🎉 レシピを追加しました');
     if (gdriveAccessToken) syncWithGDrive(true);
   }
 
@@ -972,19 +978,26 @@
   }
 
   function extractIngredientEntries(doc, ingredients = []) {
-    // Cookpad's visible list retains headings and indentation omitted by JSON-LD.
-    const rows = Array.from(doc.querySelectorAll('.ingredient-list li[id^="ingredient_"]'));
+    // The visible lists retain headings omitted from the flat Recipe ingredient array.
+    const delishList = doc.querySelector('.delish-recipe-ingredients .ingredient-list');
+    const rows = delishList ? Array.from(delishList.children)
+      : Array.from(doc.querySelectorAll('.ingredient-list li[id^="ingredient_"]'));
     if (!rows.length) return null;
     const entries = [];
     for (const row of rows) {
-      const name = row.querySelector('span');
-      const amount = row.querySelector('bdi');
+      const heading = row.classList.contains('headline') || row.classList.contains('ingredient-group__header');
+      if (heading) {
+        entries.push({ raw: row.textContent.trim(), name: row.textContent.trim(), amount: '', heading: true });
+        continue;
+      }
+      const name = row.querySelector(delishList ? '.ingredient-name' : 'span');
+      const amount = row.querySelector(delishList ? '.ingredient-serving' : 'bdi');
       if (!name || !amount || !name.textContent.trim()) return null;
       entries.push({
         raw: name.textContent,
         name: name.textContent.trim(),
         amount: amount.textContent.trim(),
-        heading: row.classList.contains('headline')
+        heading: false
       });
     }
     // Reject a partial or unrelated list rather than losing or duplicating ingredients.
@@ -1647,6 +1660,7 @@
   let gdriveLastSyncedAt = null;
   let gdriveSyncsInFlight = 0;
   let gdriveSyncFailed = false;
+  let gdriveSyncErrorMessage = '';
 
   let tokenClient = null;
 
@@ -1817,36 +1831,54 @@
     // keeping as empty stub to prevent references from throwing.
   }
 
+  async function requestGDrive(url, options, readResponse) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        if (response.ok) return await readResponse(response);
+        const body = await response.json().catch(() => ({}));
+        const error = new Error('Google Drive request failed');
+        error.status = response.status;
+        error.reason = body.error?.errors?.[0]?.reason || body.error?.status || '';
+        throw error;
+      } catch (error) {
+        const temporary = error.status === 429 || error.status >= 500
+          || ['rateLimitExceeded', 'userRateLimitExceeded'].includes(error.reason)
+          || error.name === 'AbortError' || error.name === 'TypeError';
+        // PATCH and GET can be repeated safely. A file-creation POST is not retried.
+        if (attempt > 0 || options.method === 'POST' || !temporary) throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+      setGDriveStatus('syncing', '同期中…（通信を再試行しています）');
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+  }
+
   async function syncWithGDrive(silent = false) {
     if (!gdriveAccessToken) return;
 
-    if (gdriveSyncsInFlight === 0) gdriveSyncFailed = false;
+    if (gdriveSyncsInFlight === 0) {
+      gdriveSyncFailed = false;
+      gdriveSyncErrorMessage = '';
+    }
     gdriveSyncsInFlight++;
     // Silent sync suppresses toasts, but must still show its real progress.
     setGDriveStatus('syncing', '同期中…');
 
+    let stage = 'Googleドライブのファイル確認';
     try {
       // 1. Search for file
-      const searchRes = await fetch(
+      const searchData = await requestGDrive(
         `https://www.googleapis.com/drive/v3/files?q=name='${GDRIVE_FILE_NAME}' and trashed=false&fields=files(id,name)&spaces=drive`,
         {
           headers: {
             'Authorization': `Bearer ${gdriveAccessToken}`
           }
-        }
+        }, response => response.json()
       );
-
-      if (!searchRes.ok) {
-        if (searchRes.status === 401) {
-          // Token expired
-          disconnectGDrive();
-          if (!silent) showToast('⚠️ セッションが切れました。再接続してください。', 'error');
-          return;
-        }
-        throw new Error('Search failed');
-      }
-
-      const searchData = await searchRes.json();
       const file = searchData.files && searchData.files[0];
 
       let driveRecipes = [];
@@ -1856,22 +1888,24 @@
       if (file) {
         fileId = file.id;
         // 2. File exists, download it
-        const downloadRes = await fetch(
+        stage = 'Googleドライブからの読み込み';
+        const cloudData = await requestGDrive(
           `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
           {
             headers: {
               'Authorization': `Bearer ${gdriveAccessToken}`
             }
-          }
+          }, response => response.json()
         );
-
-        if (!downloadRes.ok) throw new Error('Download failed');
-        const cloudData = await downloadRes.json();
+        if (!cloudData || (cloudData.recipes !== undefined && !Array.isArray(cloudData.recipes))) {
+          throw new Error('Invalid recipe data in Google Drive');
+        }
         driveRecipes = cloudData.recipes || [];
         driveDeletedIds = cloudData.deletedIds || [];
       }
 
       // Merge deleted tombstones (Local + Cloud), and purge ones older than 30 days
+      stage = 'この端末への保存';
       const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
       const now = Date.now();
       const localTombstones = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
@@ -1909,8 +1943,8 @@
         .filter(r => !mergedDeletedIds.includes(r.id));
 
       // 4. Update local state
+      saveRecipes(mergedRecipes);
       recipes = mergedRecipes;
-      saveRecipes();
       renderRecipes();
 
       // 5. Upload back to GDrive (Create or Update)
@@ -1922,10 +1956,10 @@
         deletedIds: mergedTombstones  // store full tombstone objects in cloud
       };
 
-      let uploadRes;
+      stage = 'Googleドライブへのアップロード';
       if (fileId) {
         // Update content (PATCH request)
-        uploadRes = await fetch(
+        await requestGDrive(
           `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
           {
             method: 'PATCH',
@@ -1934,7 +1968,7 @@
               'Content-Type': 'application/json'
             },
             body: JSON.stringify(uploadData)
-          }
+          }, response => response.text()
         );
       } else {
         // Create new file (Multipart POST request to include metadata name)
@@ -1956,7 +1990,7 @@
           `--${boundary}--`
         ].join('\r\n');
 
-        uploadRes = await fetch(
+        await requestGDrive(
           'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
           {
             method: 'POST',
@@ -1965,12 +1999,8 @@
               'Content-Type': `multipart/related; boundary=${boundary}`
             },
             body: body
-          }
+          }, response => response.text()
         );
-      }
-
-      if (!uploadRes.ok) {
-        throw new Error('Upload failed');
       }
 
       gdriveLastSyncedAt = Date.now();
@@ -1979,13 +2009,28 @@
 
     } catch (err) {
       console.error(err);
+      if (err.status === 401) {
+        disconnectGDrive();
+        setGDriveStatus('disconnected', '接続の有効期限が切れました。Googleアカウントと再接続してください');
+        return;
+      }
       gdriveSyncFailed = true;
+      if (err.name === 'QuotaExceededError') {
+        gdriveSyncErrorMessage = 'この端末の保存容量が不足しています。写真を小さくして保存してください';
+      } else if (err.reason === 'storageQuotaExceeded') {
+        gdriveSyncErrorMessage = 'Googleドライブの空き容量が不足しています';
+      } else {
+        const detail = [err.status, err.reason].filter(Boolean).join(' / ');
+        const cause = err.name === 'AbortError' ? '通信がタイムアウトしました'
+          : err.name === 'TypeError' ? '通信できませんでした' : '同期に失敗しました';
+        gdriveSyncErrorMessage = `${stage}で${cause}${detail ? `（${detail}）` : ''}。もう一度お試しください`;
+      }
       if (!silent) showToast('⚠️ 同期中にエラーが発生しました', 'error');
     } finally {
       gdriveSyncsInFlight--;
       if (gdriveAccessToken) {
         if (gdriveSyncsInFlight > 0) setGDriveStatus('syncing', '同期中…');
-        else if (gdriveSyncFailed) setGDriveStatus('error', '同期に失敗しました。もう一度お試しください');
+        else if (gdriveSyncFailed) setGDriveStatus('error', gdriveSyncErrorMessage);
         else setGDriveStatus('synced', '同期済み');
       }
     }
@@ -2086,12 +2131,22 @@
     dom.formModalClose.addEventListener('click', handleCancelForm);
     dom.btnCancelForm.addEventListener('click', handleCancelForm);
 
-    dom.recipeForm.addEventListener('submit', (e) => {
+    dom.recipeForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const data = collectFormData();
       if (!validateForm(data)) return;
-      saveRecipe(data);
-      closeModal(dom.formModal);
+      if (dom.btnSaveRecipe.disabled) return;
+      dom.btnSaveRecipe.disabled = true;
+      try {
+        await saveRecipe(data);
+        closeModal(dom.formModal);
+      } catch (error) {
+        showToast(error.name === 'QuotaExceededError'
+          ? '端末の保存容量が不足しています。写真を小さくして保存してください'
+          : 'レシピを保存できませんでした。もう一度お試しください', 'error');
+      } finally {
+        dom.btnSaveRecipe.disabled = false;
+      }
     });
 
     dom.btnAddIngredient.addEventListener('click', () => addIngredientRow());
