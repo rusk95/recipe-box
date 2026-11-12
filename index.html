@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="style.css?v=21">
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -88,6 +88,10 @@
         <button class="category-tab" data-category="noodle">
           <span class="category-tab__icon">🍜</span>
           <span class="category-tab__label">麺類</span>
+        </button>
+        <button class="category-tab" data-category="other">
+          <span class="category-tab__icon">🍽️</span>
+          <span class="category-tab__label">その他</span>
         </button>
       </div>
     </div>
@@ -185,6 +189,7 @@
                 <option value="soup">🍲 汁物</option>
                 <option value="rice">🍚 ご飯もの</option>
                 <option value="noodle">🍜 麺類</option>
+                <option value="other">🍽️ その他</option>
               </select>
             </div>
             <div class="form-group form-group--third">
@@ -340,7 +345,7 @@
             <p class="settings-hint">この操作は元に戻せません。事前にエクスポートすることをお勧めします。</p>
           </div>
         </div>
-        <p class="settings-hint" id="appVersion">RecipeBox v20</p>
+        <p class="settings-hint" id="appVersion">RecipeBox v21</p>
       </div>
     </div>
   </div>
@@ -363,6 +368,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>

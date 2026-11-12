@@ -15,7 +15,8 @@
     salad:  { icon: '🥬', label: 'サラダ',         short: 'サラダ' },
     soup:   { icon: '🍲', label: '汁物・スープ',   short: '汁物' },
     rice:   { icon: '🍚', label: 'ご飯もの',       short: 'ご飯もの' },
-    noodle: { icon: '🍜', label: '麺類',           short: '麺類' }
+    noodle: { icon: '🍜', label: '麺類',           short: '麺類' },
+    other:  { icon: '🍽️', label: 'その他',         short: 'その他' }
   };
 
   // ---- State ----
