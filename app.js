@@ -114,17 +114,74 @@
   // ============================================
   // DATA LAYER
   // ============================================
-  function loadRecipes() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      recipes = raw ? JSON.parse(raw) : [];
-    } catch {
-      recipes = [];
+  let recipeDatabasePromise = null;
+  let recipeSaveQueue = Promise.resolve();
+
+  function openRecipeDatabase() {
+    if (!recipeDatabasePromise) {
+      recipeDatabasePromise = new Promise((resolve, reject) => {
+        const request = indexedDB.open('recipebox-local', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('data');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          database.onversionchange = () => {
+            database.close();
+            recipeDatabasePromise = null;
+          };
+          resolve(database);
+        };
+      }).catch(error => {
+        recipeDatabasePromise = null;
+        throw error;
+      });
+    }
+    return recipeDatabasePromise;
+  }
+
+  async function loadRecipes() {
+    const database = await openRecipeDatabase();
+    const stored = await new Promise((resolve, reject) => {
+      const request = database.transaction('data', 'readonly').objectStore('data').get(STORAGE_KEY);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const legacy = localStorage.getItem(STORAGE_KEY);
+    const raw = stored === undefined ? legacy : stored;
+    const loaded = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(loaded)) throw new Error('Invalid local recipe data');
+    recipes = loaded;
+    if (stored === undefined && legacy) {
+      // Commit the complete legacy data before releasing the small Web Storage slot.
+      await saveRecipes();
+      localStorage.removeItem(STORAGE_KEY);
     }
   }
 
-  function saveRecipes(list = recipes) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  function saveRecipes(update = list => list) {
+    // Evaluate each change against the last committed data, including concurrent syncs.
+    const operation = recipeSaveQueue.then(async () => {
+      const next = update(recipes);
+      const serialized = JSON.stringify(next);
+      const database = await openRecipeDatabase();
+      await new Promise((resolve, reject) => {
+        const transaction = database.transaction('data', 'readwrite');
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error || new Error('Recipe save aborted'));
+        transaction.onerror = () => reject(transaction.error);
+        transaction.objectStore('data').put(serialized, STORAGE_KEY);
+      });
+      recipes = next;
+    });
+    recipeSaveQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  function showRecipeSaveError(error) {
+    console.error(error);
+    showToast(error.name === 'QuotaExceededError'
+      ? 'この端末の保存領域が不足しています。空き容量をご確認ください'
+      : 'レシピを保存できませんでした。もう一度お試しください', 'error');
   }
 
   function generateId() {
@@ -304,19 +361,19 @@
   // ============================================
   // RECIPE CRUD
   // ============================================
-  function toggleFavorite(id) {
+  async function toggleFavorite(id) {
+    try {
+      await saveRecipes(list => list.map(recipe => recipe.id === id
+        ? { ...recipe, favorite: !recipe.favorite, updatedAt: Date.now() } : recipe));
+    } catch (error) { showRecipeSaveError(error); return; }
     const recipe = recipes.find(r => r.id === id);
     if (!recipe) return;
-    recipe.favorite = !recipe.favorite;
-    saveRecipes();
     renderRecipes();
     showToast(recipe.favorite ? '⭐ お気に入りに追加しました' : 'お気に入りを解除しました');
     if (gdriveAccessToken) syncWithGDrive(true);
   }
 
-  function deleteRecipe(id) {
-    recipes = recipes.filter(r => r.id !== id);
-
+  async function deleteRecipe(id) {
     // Track deleted ID as tombstone with timestamp
     const tombstones = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
     const entry = tombstones.find(t => (typeof t === 'object' ? t.id : t) === id);
@@ -325,13 +382,16 @@
       localStorage.setItem('recipebox_deleted_ids', JSON.stringify(tombstones));
     }
 
-    saveRecipes();
+    try {
+      await saveRecipes(list => list.filter(recipe => recipe.id !== id));
+    } catch (error) { showRecipeSaveError(error); return; }
     renderRecipes();
     showToast('🗑️ レシピを削除しました');
     if (gdriveAccessToken) syncWithGDrive(true);
   }
 
   async function saveRecipe(data) {
+    const recipeId = editingId;
     // If photo is an external URL (not base64), try to convert it before saving
     if (data.photo && data.photo.startsWith('http')) {
       try {
@@ -340,13 +400,9 @@
       } catch {}
     }
 
-    const previousRecipes = recipes;
-    if (editingId) {
-      const idx = recipes.findIndex(r => r.id === editingId);
-      if (idx !== -1) {
-        recipes = [...recipes];
-        recipes[idx] = { ...recipes[idx], ...data, updatedAt: Date.now() };
-      }
+    if (recipeId) {
+      await saveRecipes(list => list.map(recipe => recipe.id === recipeId
+        ? { ...recipe, ...data, updatedAt: Date.now() } : recipe));
     } else {
       const newRecipe = {
         id: generateId(),
@@ -355,16 +411,10 @@
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
-      recipes = [newRecipe, ...recipes];
-    }
-    try {
-      saveRecipes();
-    } catch (error) {
-      recipes = previousRecipes;
-      throw error;
+      await saveRecipes(list => [newRecipe, ...list]);
     }
     renderRecipes();
-    showToast(editingId ? '✅ レシピを更新しました' : '🎉 レシピを追加しました');
+    showToast(recipeId ? '✅ レシピを更新しました' : '🎉 レシピを追加しました');
     if (gdriveAccessToken) syncWithGDrive(true);
   }
 
@@ -648,7 +698,7 @@
     const reader = new FileReader();
     reader.onload = (ev) => {
       // Resize image to save storage
-      resizeImage(ev.target.result, 800, 600, (resized) => {
+      resizeImage(ev.target.result, 640, 480, (resized) => {
         dom.photoPreview.src = resized;
         dom.photoPreview.style.display = 'block';
         dom.photoPlaceholder.style.display = 'none';
@@ -675,7 +725,7 @@
       canvas.height = h;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, w, h);
-      callback(canvas.toDataURL('image/jpeg', 0.8));
+      callback(canvas.toDataURL('image/jpeg', 0.7));
     };
     img.src = dataUrl;
   }
@@ -1240,7 +1290,7 @@
       if (blob?.type.startsWith('image/')) {
         return new Promise((resolve) => {
           const reader = new FileReader();
-          reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
+          reader.onload = () => resizeImage(reader.result, 640, 480, resolve);
           reader.readAsDataURL(blob);
         });
       }
@@ -1255,7 +1305,7 @@
         if (!blob?.type.startsWith('image/')) continue;
         return new Promise((resolve) => {
           const reader = new FileReader();
-          reader.onload = () => resizeImage(reader.result, 800, 600, resolve);
+          reader.onload = () => resizeImage(reader.result, 640, 480, resolve);
           reader.readAsDataURL(blob);
         });
       } catch { continue; }
@@ -1594,7 +1644,7 @@
 
   function importData(file) {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target.result);
         let imported = [];
@@ -1609,17 +1659,17 @@
         }
 
         // Merge: skip duplicates by ID
-        const existingIds = new Set(recipes.map(r => r.id));
         let addedCount = 0;
-
-        imported.forEach(recipe => {
-          if (!existingIds.has(recipe.id)) {
-            recipes.push(recipe);
-            addedCount++;
-          }
+        await saveRecipes(list => {
+          const existingIds = new Set(list.map(recipe => recipe.id));
+          const additions = imported.filter(recipe => {
+            if (existingIds.has(recipe.id)) return false;
+            existingIds.add(recipe.id);
+            return true;
+          });
+          addedCount = additions.length;
+          return [...list, ...additions];
         });
-
-        saveRecipes();
         renderRecipes();
 
         if (addedCount > 0) {
@@ -1634,7 +1684,7 @@
     reader.readAsText(file);
   }
 
-  function deleteAllRecipes() {
+  async function deleteAllRecipes() {
     const now = Date.now();
     const tombstones = JSON.parse(localStorage.getItem('recipebox_deleted_ids') || '[]');
     recipes.forEach(r => {
@@ -1643,8 +1693,9 @@
     });
     localStorage.setItem('recipebox_deleted_ids', JSON.stringify(tombstones));
 
-    recipes = [];
-    saveRecipes();
+    try {
+      await saveRecipes(() => []);
+    } catch (error) { showRecipeSaveError(error); return; }
     renderRecipes();
     showToast('🗑️ すべてのレシピを削除しました');
     if (gdriveAccessToken) syncWithGDrive(true);
@@ -1939,12 +1990,9 @@
       localStorage.setItem('recipebox_deleted_ids', JSON.stringify(mergedTombstones));
 
       // 3. Merge recipes (Local + Cloud) and filter out deleted ones
-      const mergedRecipes = mergeRecipeLists(recipes, driveRecipes)
-        .filter(r => !mergedDeletedIds.includes(r.id));
-
       // 4. Update local state
-      saveRecipes(mergedRecipes);
-      recipes = mergedRecipes;
+      await saveRecipes(list => mergeRecipeLists(list, driveRecipes)
+        .filter(recipe => !mergedDeletedIds.includes(recipe.id)));
       renderRecipes();
 
       // 5. Upload back to GDrive (Create or Update)
@@ -2016,7 +2064,7 @@
       }
       gdriveSyncFailed = true;
       if (err.name === 'QuotaExceededError') {
-        gdriveSyncErrorMessage = 'この端末の保存容量が不足しています。写真を小さくして保存してください';
+        gdriveSyncErrorMessage = 'この端末の保存領域が不足しています。空き容量をご確認ください';
       } else if (err.reason === 'storageQuotaExceeded') {
         gdriveSyncErrorMessage = 'Googleドライブの空き容量が不足しています';
       } else {
@@ -2141,9 +2189,7 @@
         await saveRecipe(data);
         closeModal(dom.formModal);
       } catch (error) {
-        showToast(error.name === 'QuotaExceededError'
-          ? '端末の保存容量が不足しています。写真を小さくして保存してください'
-          : 'レシピを保存できませんでした。もう一度お試しください', 'error');
+        showRecipeSaveError(error);
       } finally {
         dom.btnSaveRecipe.disabled = false;
       }
@@ -2310,12 +2356,22 @@
   // ============================================
   // INIT
   // ============================================
-  function init() {
+  async function init() {
     initTheme();
-    loadRecipes();
+    registerSW();
+    dom.btnAddRecipe.disabled = true;
+    try {
+      await loadRecipes();
+    } catch (error) {
+      console.error(error);
+      dom.emptyState.style.display = 'block';
+      dom.emptyState.querySelector('.empty-state__title').textContent = '保存済みレシピを読み込めませんでした';
+      dom.emptyState.querySelector('.empty-state__text').textContent = 'アプリを閉じて、もう一度開いてください。';
+      return;
+    }
     renderRecipes();
     bindEvents();
-    registerSW();
+    dom.btnAddRecipe.disabled = false;
     initGDrive();
     handleOAuthCallback();
   }

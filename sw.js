@@ -1,9 +1,9 @@
-const CACHE_NAME = 'recipebox-v19';
+const CACHE_NAME = 'recipebox-v20';
 const ASSETS = [
   './',
   './index.html',
-  './style.css?v=19',
-  './app.js?v=19',
+  './style.css?v=20',
+  './app.js?v=20',
   './manifest.json'
 ];
 
